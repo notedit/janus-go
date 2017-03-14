@@ -6,10 +6,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -79,6 +81,7 @@ func Connect(wsURL string) (*Gateway, error) {
 	gateway.transactions = make(map[uint64]chan interface{})
 	gateway.Sessions = make(map[uint64]*Session)
 
+	go gateway.ping()
 	go gateway.recv()
 	return gateway, nil
 }
@@ -119,6 +122,20 @@ func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interf
 
 func passMsg(ch chan interface{}, msg interface{}) {
 	ch <- msg
+}
+
+func (gateway *Gateway) ping() {
+	ticker := time.NewTicker(time.Second * 30)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if err := gateway.conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second)); err != nil {
+				log.Println("ping:", err)
+				return
+			}
+		}
+	}
 }
 
 func (gateway *Gateway) recv() {
