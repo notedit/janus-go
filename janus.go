@@ -366,6 +366,24 @@ func (handle *Handle) send(msg map[string]interface{}, transaction chan interfac
 	handle.session.send(msg, transaction)
 }
 
+// send sync request
+func (handle *Handle) Request(body interface{}) (*SuccessMsg, error) {
+	req, ch := newRequest("message")
+	if body != nil {
+		req["body"] = body
+	}
+	handle.send(req, ch)
+
+	msg := <-ch
+
+	switch msg := msg.(type) {
+	case *SuccessMsg:
+		return msg, nil
+	case *ErrorMsg:
+		return nil, msg
+	}
+}
+
 // Message sends a message request to a plugin handle on the Gateway.
 // body should be the plugin data to be passed to the plugin, and jsep should
 // contain an optional SDP offer/answer to establish a WebRTC PeerConnection.
