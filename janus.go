@@ -157,6 +157,14 @@ func (gateway *Gateway) recv() {
 			continue
 		}
 
+		if debug {
+			// log message being sent
+			var log bytes.Buffer
+			json.Indent(&log, data, ">", "   ")
+			log.Write([]byte("\n"))
+			log.WriteTo(os.Stdout)
+		}
+
 		typeFunc, ok := msgtypes[base.Type]
 		if !ok {
 			fmt.Printf("Unknown message type received!\n")
