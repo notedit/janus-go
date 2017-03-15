@@ -52,7 +52,10 @@ func (err *ErrorMsg) Error() string {
 }
 
 type SuccessMsg struct {
-	Data SuccessData
+	Data       SuccessData
+	PluginData PluginData
+	Session    uint64 `json:"session_id"`
+	Handle     uint64 `json:"sender"`
 }
 
 type SuccessData struct {
@@ -87,6 +90,8 @@ type AckMsg struct{}
 type EventMsg struct {
 	Plugindata PluginData
 	Jsep       map[string]interface{}
+	Session    uint64 `json:"session_id"`
+	Handle     uint64 `json:"sender"`
 }
 
 type PluginData struct {
