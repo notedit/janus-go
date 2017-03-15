@@ -382,6 +382,8 @@ func (handle *Handle) Request(body interface{}) (*SuccessMsg, error) {
 	case *ErrorMsg:
 		return nil, msg
 	}
+
+	return nil, unexpected("message")
 }
 
 // Message sends a message request to a plugin handle on the Gateway.
