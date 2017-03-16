@@ -46,6 +46,8 @@ type Gateway struct {
 	conn            *websocket.Conn
 	nextTransaction uint64
 	transactions    map[uint64]chan interface{}
+
+	writeMu sync.Mutex
 }
 
 // Connect creates a new Gateway instance, connected to the Janus Gateway.
@@ -113,7 +115,10 @@ func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interf
 		log.WriteTo(os.Stdout)
 	}
 
+	gateway.writeMu.Lock()
 	err = gateway.conn.WriteMessage(websocket.TextMessage, data)
+	gateway.writeMu.Unlock()
+
 	if err != nil {
 		fmt.Printf("conn.Write: %s\n", err)
 		return
@@ -130,7 +135,12 @@ func (gateway *Gateway) ping() {
 	for {
 		select {
 		case <-ticker.C:
-			if err := gateway.conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second)); err != nil {
+
+			gateway.writeMu.Lock()
+			err := gateway.conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second))
+			gateway.writeMu.Unlock()
+
+			if err != nil {
 				log.Println("ping:", err)
 				return
 			}
