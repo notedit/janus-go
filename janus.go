@@ -47,7 +47,8 @@ type Gateway struct {
 	nextTransaction uint64
 	transactions    map[uint64]chan interface{}
 
-	writeMu sync.Mutex
+	sendChan chan []byte
+	writeMu  sync.Mutex
 }
 
 // Connect creates a new Gateway instance, connected to the Janus Gateway.
@@ -82,6 +83,8 @@ func Connect(wsURL string) (*Gateway, error) {
 	gateway.conn = conn
 	gateway.transactions = make(map[uint64]chan interface{})
 	gateway.Sessions = make(map[uint64]*Session)
+
+	gateway.sendChan = make(chan []byte, 100)
 
 	go gateway.ping()
 	go gateway.recv()
@@ -146,6 +149,10 @@ func (gateway *Gateway) ping() {
 			}
 		}
 	}
+}
+
+func (gateway *Gateway) sendloop() {
+
 }
 
 func (gateway *Gateway) recv() {
