@@ -29,6 +29,7 @@ var msgtypes = map[string]func() interface{}{
 	"media":       func() interface{} { return &MediaMsg{} },
 	"hangup":      func() interface{} { return &HangupMsg{} },
 	"slowlink":    func() interface{} { return &SlowLinkMsg{} },
+	"timeout":     func() interface{} { return &TimeoutMsg{} },
 }
 
 type BaseMsg struct {
@@ -99,7 +100,14 @@ type PluginData struct {
 	Data   map[string]interface{}
 }
 
-type WebRTCUpMsg struct{}
+type WebRTCUpMsg struct {
+	Session uint64 `json:"session_id"`
+	Handle  uint64 `json:"sender"`
+}
+
+type TimeoutMsg struct {
+	Session uint64 `json:"session_id"`
+}
 
 type SlowLinkMsg struct {
 	Uplink bool
@@ -112,5 +120,7 @@ type MediaMsg struct {
 }
 
 type HangupMsg struct {
-	Reason string
+	Reason  string
+	Session uint64 `json:"session_id"`
+	Handle  uint64 `json:"sender"`
 }

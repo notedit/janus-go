@@ -138,11 +138,7 @@ func (gateway *Gateway) ping() {
 	for {
 		select {
 		case <-ticker.C:
-
-			gateway.writeMu.Lock()
-			err := gateway.conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second))
-			gateway.writeMu.Unlock()
-
+			err := gateway.conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(20*time.Second))
 			if err != nil {
 				log.Println("ping:", err)
 				return
@@ -378,6 +374,12 @@ func (session *Session) Destroy() (*AckMsg, error) {
 type Handle struct {
 	// Id is the handle_id of this plugin handle
 	Id uint64
+
+	// Type   // pub  or sub
+	Type string
+
+	//User   // Userid
+	User string
 
 	// Events is a receive only channel that can be used to receive events
 	// related to this handle from the gateway.
