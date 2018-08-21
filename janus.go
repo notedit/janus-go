@@ -51,24 +51,7 @@ type Gateway struct {
 	writeMu  sync.Mutex
 }
 
-// Connect creates a new Gateway instance, connected to the Janus Gateway.
-// path should be a filesystem path to the Unix Socket that the Unix transport
-// is bound to.
-// On success, a new Gateway object will be returned and error will be nil.
-// func Connect(path string, netType string) (*Gateway, error) {
-// 	conn, err := net.Dial(netType, path)
-// 	if err != nil {
-// 		return nil, err
-// 	}
 
-// 	gateway := new(Gateway)
-// 	//gateway.conn = conn
-// 	gateway.transactions = make(map[uint64]chan interface{})
-// 	gateway.Sessions = make(map[uint64]*Session)
-
-// 	go gateway.recv()
-// 	return gateway, nil
-// }
 
 func Connect(wsURL string) (*Gateway, error) {
 	websocket.DefaultDialer.Subprotocols = []string{"janus-protocol"}
@@ -110,13 +93,6 @@ func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interf
 		return
 	}
 
-	if debug {
-		// log message being sent
-		var log bytes.Buffer
-		json.Indent(&log, data, ">", "   ")
-		log.Write([]byte("\n"))
-		log.WriteTo(os.Stdout)
-	}
 
 	gateway.writeMu.Lock()
 	err = gateway.conn.WriteMessage(websocket.TextMessage, data)
@@ -194,7 +170,6 @@ func (gateway *Gateway) recv() {
 		if base.Id == "" {
 			// Is this a Handle event?
 			if base.Handle == 0 {
-				// Nope. No idea what's going on...
 				// Error()
 			} else {
 				// Lookup Session
@@ -219,7 +194,7 @@ func (gateway *Gateway) recv() {
 				go passMsg(handle.Events, msg)
 			}
 		} else {
-			id, _ := strconv.ParseUint(base.Id, 10, 64) // FIXME: error checking
+			id, _ := strconv.ParseUint(base.Id, 10, 64) 
 			// Lookup Transaction
 			gateway.Lock()
 			transaction := gateway.transactions[id]
@@ -271,6 +246,7 @@ func (gateway *Gateway) Create() (*Session, error) {
 	session.gateway = gateway
 	session.Id = success.Data.Id
 	session.Handles = make(map[uint64]*Handle)
+	session.Events = make(chan interface{}, 2)
 
 	// Store this session
 	gateway.Lock()
@@ -287,6 +263,8 @@ type Session struct {
 
 	// Handles is a map of plugin handles within this session
 	Handles map[uint64]*Handle
+
+	Events chan interface{}
 
 	// Access to the Handles map should be synchronized with the Session.Lock()
 	// and Session.Unlock() methods provided by the embeded sync.Mutex.
