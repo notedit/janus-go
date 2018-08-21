@@ -18,12 +18,6 @@ import (
 
 var debug = false
 
-func init() {
-	if os.Getenv("DEBUG") != "" {
-		debug = true
-	}
-}
-
 func unexpected(request string) error {
 	return fmt.Errorf("Unexpected response received to '%s' request", request)
 }
@@ -50,8 +44,6 @@ type Gateway struct {
 	sendChan chan []byte
 	writeMu  sync.Mutex
 }
-
-
 
 func Connect(wsURL string) (*Gateway, error) {
 	websocket.DefaultDialer.Subprotocols = []string{"janus-protocol"}
@@ -92,7 +84,6 @@ func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interf
 		fmt.Printf("json.Marshal: %s\n", err)
 		return
 	}
-
 
 	gateway.writeMu.Lock()
 	err = gateway.conn.WriteMessage(websocket.TextMessage, data)
@@ -194,7 +185,7 @@ func (gateway *Gateway) recv() {
 				go passMsg(handle.Events, msg)
 			}
 		} else {
-			id, _ := strconv.ParseUint(base.Id, 10, 64) 
+			id, _ := strconv.ParseUint(base.Id, 10, 64)
 			// Lookup Transaction
 			gateway.Lock()
 			transaction := gateway.transactions[id]
