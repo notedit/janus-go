@@ -85,6 +85,14 @@ func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interf
 		return
 	}
 
+	if debug {
+		// log message being sent
+		var log bytes.Buffer
+		json.Indent(&log, data, ">", "   ")
+		log.Write([]byte("\n"))
+		log.WriteTo(os.Stdout)
+	}
+
 	gateway.writeMu.Lock()
 	err = gateway.conn.WriteMessage(websocket.TextMessage, data)
 	gateway.writeMu.Unlock()
@@ -140,7 +148,7 @@ func (gateway *Gateway) recv() {
 		if debug {
 			// log message being sent
 			var log bytes.Buffer
-			json.Indent(&log, data, ">", "   ")
+			json.Indent(&log, data, "<", "   ")
 			log.Write([]byte("\n"))
 			log.WriteTo(os.Stdout)
 		}
