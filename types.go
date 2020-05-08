@@ -4,19 +4,18 @@
 // type. The BaseMsg type extracts the following JSON from the message:
 //		{
 //			"janus": <Type>,
-//			"transaction": <Id>,
+//			"transaction": <ID>,
 //			"session_id": <Session>,
 //			"sender": <Handle>
 //		}
 // The Type field is inspected to determine which concrete type
-// to decode the message to, while the other fields (Id/Session/Handle) are
+// to decode the message to, while the other fields (ID/Session/Handle) are
 // inspected to determine where the message should be delivered. Messages
-// with an Id field defined are considered responses to previous requests, and
-// will be passed directly to requester. Messages without an Id field are
+// with an ID field defined are considered responses to previous requests, and
+// will be passed directly to requester. Messages without an ID field are
 // considered unsolicited events from the gateway and are expected to have
 // both Session and Handle fields defined. They will be passed to the Events
 // channel of the related Handle and can be read from there.
-
 
 package janus
 
@@ -36,7 +35,7 @@ var msgtypes = map[string]func() interface{}{
 
 type BaseMsg struct {
 	Type    string `json:"janus"`
-	Id      string `json:"transaction"`
+	ID      string `json:"transaction"`
 	Session uint64 `json:"session_id"`
 	Handle  uint64 `json:"sender"`
 }
@@ -62,7 +61,7 @@ type SuccessMsg struct {
 }
 
 type SuccessData struct {
-	Id uint64
+	ID uint64
 }
 
 type DetachedMsg struct{}
@@ -75,7 +74,7 @@ type InfoMsg struct {
 	DataChannels  bool   `json:"data_channels"`
 	IPv6          bool   `json:"ipv6"`
 	LocalIP       string `json:"local-ip"`
-	ICE_TCP       bool   `json:"ice-tcp"`
+	IceTCP        bool   `json:"ice-tcp"`
 	Transports    map[string]PluginInfo
 	Plugins       map[string]PluginInfo
 }
