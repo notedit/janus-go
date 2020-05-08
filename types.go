@@ -113,7 +113,7 @@ type TimeoutMsg struct {
 
 type SlowLinkMsg struct {
 	Uplink bool
-	Nacks  int64
+	Lost   int64
 }
 
 type MediaMsg struct {
