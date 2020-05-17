@@ -85,6 +85,14 @@ func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interf
 		return
 	}
 
+	if debug {
+		// log message being sent
+		var log bytes.Buffer
+		json.Indent(&log, data, ">", "   ")
+		log.Write([]byte("\n"))
+		log.WriteTo(os.Stdout)
+	}
+
 	gateway.writeMu.Lock()
 	err = gateway.conn.WriteMessage(websocket.TextMessage, data)
 	gateway.writeMu.Unlock()
@@ -140,7 +148,7 @@ func (gateway *Gateway) recv() {
 		if debug {
 			// log message being sent
 			var log bytes.Buffer
-			json.Indent(&log, data, ">", "   ")
+			json.Indent(&log, data, "<", "   ")
 			log.Write([]byte("\n"))
 			log.WriteTo(os.Stdout)
 		}
@@ -158,7 +166,7 @@ func (gateway *Gateway) recv() {
 		}
 
 		// Pass message on from here
-		if base.Id == "" {
+		if base.ID == "" {
 			// Is this a Handle event?
 			if base.Handle == 0 {
 				// Error()
@@ -185,7 +193,7 @@ func (gateway *Gateway) recv() {
 				go passMsg(handle.Events, msg)
 			}
 		} else {
-			id, _ := strconv.ParseUint(base.Id, 10, 64)
+			id, _ := strconv.ParseUint(base.ID, 10, 64)
 			// Lookup Transaction
 			gateway.Lock()
 			transaction := gateway.transactions[id]
@@ -235,13 +243,13 @@ func (gateway *Gateway) Create() (*Session, error) {
 	// Create new session
 	session := new(Session)
 	session.gateway = gateway
-	session.Id = success.Data.Id
+	session.ID = success.Data.ID
 	session.Handles = make(map[uint64]*Handle)
 	session.Events = make(chan interface{}, 2)
 
 	// Store this session
 	gateway.Lock()
-	gateway.Sessions[session.Id] = session
+	gateway.Sessions[session.ID] = session
 	gateway.Unlock()
 
 	return session, nil
@@ -249,8 +257,8 @@ func (gateway *Gateway) Create() (*Session, error) {
 
 // Session represents a session instance on the Janus Gateway.
 type Session struct {
-	// Id is the session_id of this session
-	Id uint64
+	// ID is the session_id of this session
+	ID uint64
 
 	// Handles is a map of plugin handles within this session
 	Handles map[uint64]*Handle
@@ -265,7 +273,7 @@ type Session struct {
 }
 
 func (session *Session) send(msg map[string]interface{}, transaction chan interface{}) {
-	msg["session_id"] = session.Id
+	msg["session_id"] = session.ID
 	session.gateway.send(msg, transaction)
 }
 
@@ -288,11 +296,11 @@ func (session *Session) Attach(plugin string) (*Handle, error) {
 
 	handle := new(Handle)
 	handle.session = session
-	handle.Id = success.Data.Id
+	handle.ID = success.Data.ID
 	handle.Events = make(chan interface{}, 8)
 
 	session.Lock()
-	session.Handles[handle.Id] = handle
+	session.Handles[handle.ID] = handle
 	session.Unlock()
 
 	return handle, nil
@@ -333,7 +341,7 @@ func (session *Session) Destroy() (*AckMsg, error) {
 
 	// Remove this session from the gateway
 	session.gateway.Lock()
-	delete(session.gateway.Sessions, session.Id)
+	delete(session.gateway.Sessions, session.ID)
 	session.gateway.Unlock()
 
 	return ack, nil
@@ -341,8 +349,8 @@ func (session *Session) Destroy() (*AckMsg, error) {
 
 // Handle represents a handle to a plugin instance on the Gateway.
 type Handle struct {
-	// Id is the handle_id of this plugin handle
-	Id uint64
+	// ID is the handle_id of this plugin handle
+	ID uint64
 
 	// Type   // pub  or sub
 	Type string
@@ -358,7 +366,7 @@ type Handle struct {
 }
 
 func (handle *Handle) send(msg map[string]interface{}, transaction chan interface{}) {
-	msg["handle_id"] = handle.Id
+	msg["handle_id"] = handle.ID
 	handle.session.send(msg, transaction)
 }
 
@@ -471,7 +479,7 @@ func (handle *Handle) Detach() (*AckMsg, error) {
 
 	// Remove this handle from the session
 	handle.session.Lock()
-	delete(handle.session.Handles, handle.Id)
+	delete(handle.session.Handles, handle.ID)
 	handle.session.Unlock()
 
 	return ack, nil
