@@ -173,7 +173,6 @@ func (gateway *Gateway) recv() {
 			id, _ := strconv.ParseUint(base.ID, 10, 64)
 			gateway.Lock()
 			transactionUsed = gateway.transactionsUsed[id]
-			fmt.Printf("transactionUsed:", transactionUsed, id)
 			gateway.Unlock()
 
 		}
@@ -213,7 +212,10 @@ func (gateway *Gateway) recv() {
 			// Lookup Transaction
 			gateway.Lock()
 			transaction := gateway.transactions[id]
-			gateway.transactionsUsed[id] = true
+			switch msg.(type) {
+			case *EventMsg:
+				gateway.transactionsUsed[id] = true
+			}
 			gateway.Unlock()
 			if transaction == nil {
 				// Error()
