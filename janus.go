@@ -179,9 +179,6 @@ func (gateway *Gateway) recv() {
 
 		// Pass message on from here
 		if base.ID == "" || transactionUsed {
-			if transactionUsed {
-				fmt.Printf("msg: %v", msg)
-			}
 			// Is this a Handle event?
 			if base.Handle == 0 {
 				// Error()
