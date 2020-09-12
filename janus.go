@@ -40,6 +40,7 @@ type Gateway struct {
 	conn            *websocket.Conn
 	nextTransaction uint64
 	transactions    map[uint64]chan interface{}
+	transactionsUsed    map[uint64]bool
 
 	sendChan chan []byte
 	writeMu  sync.Mutex
@@ -57,6 +58,7 @@ func Connect(wsURL string) (*Gateway, error) {
 	gateway := new(Gateway)
 	gateway.conn = conn
 	gateway.transactions = make(map[uint64]chan interface{})
+	gateway.transactionsUsed = make(map[uint64]bool)
 	gateway.Sessions = make(map[uint64]*Session)
 
 	gateway.sendChan = make(chan []byte, 100)
@@ -77,6 +79,7 @@ func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interf
 	msg["transaction"] = strconv.FormatUint(id, 10)
 	gateway.Lock()
 	gateway.transactions[id] = transaction
+	gateway.transactionsUsed[id] = false
 	gateway.Unlock()
 
 	data, err := json.Marshal(msg)
@@ -165,8 +168,17 @@ func (gateway *Gateway) recv() {
 			continue // Decode error
 		}
 
+		var transactionUsed bool
+		if base.ID != "" {
+			id, _ := strconv.ParseUint(base.ID, 10, 64)
+			gateway.Lock()
+			transactionUsed = gateway.transactionsUsed[id]
+			gateway.Unlock()
+
+		}
+
 		// Pass message on from here
-		if base.ID == "" {
+		if base.ID == "" || transactionUsed {
 			// Is this a Handle event?
 			if base.Handle == 0 {
 				// Error()
@@ -197,6 +209,10 @@ func (gateway *Gateway) recv() {
 			// Lookup Transaction
 			gateway.Lock()
 			transaction := gateway.transactions[id]
+			switch msg.(type) {
+			case *EventMsg:
+				gateway.transactionsUsed[id] = true
+			}
 			gateway.Unlock()
 			if transaction == nil {
 				// Error()
