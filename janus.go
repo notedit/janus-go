@@ -61,9 +61,8 @@ func Connect(wsURL string) (*Gateway, error) {
 	gateway.transactions = make(map[uint64]chan interface{})
 	gateway.transactionsUsed = make(map[uint64]bool)
 	gateway.Sessions = make(map[uint64]*Session)
-	gateway.errors = make(chan error, 100)
-
-	gateway.sendChan = make(chan []byte)
+	gateway.sendChan = make(chan []byte, 100)
+	gateway.errors = make(chan error)
 
 	go gateway.ping()
 	go gateway.recv()
