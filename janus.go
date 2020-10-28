@@ -37,15 +37,16 @@ type Gateway struct {
 	// and Gateway.Unlock() methods provided by the embeded sync.Mutex.
 	sync.Mutex
 
-	conn            *websocket.Conn
-	nextTransaction uint64
-	transactions    map[uint64]chan interface{}
-	transactionsUsed    map[uint64]bool
-
-	sendChan chan []byte
-	writeMu  sync.Mutex
+	conn             *websocket.Conn
+	nextTransaction  uint64
+	transactions     map[uint64]chan interface{}
+	transactionsUsed map[uint64]bool
+	errors           chan error
+	sendChan         chan []byte
+	writeMu          sync.Mutex
 }
 
+// Connect initiates a webscoket connection with the Janus Gateway
 func Connect(wsURL string) (*Gateway, error) {
 	websocket.DefaultDialer.Subprotocols = []string{"janus-protocol"}
 
@@ -60,8 +61,8 @@ func Connect(wsURL string) (*Gateway, error) {
 	gateway.transactions = make(map[uint64]chan interface{})
 	gateway.transactionsUsed = make(map[uint64]bool)
 	gateway.Sessions = make(map[uint64]*Session)
-
 	gateway.sendChan = make(chan []byte, 100)
+	gateway.errors = make(chan error)
 
 	go gateway.ping()
 	go gateway.recv()
@@ -71,6 +72,11 @@ func Connect(wsURL string) (*Gateway, error) {
 // Close closes the underlying connection to the Gateway.
 func (gateway *Gateway) Close() error {
 	return gateway.conn.Close()
+}
+
+// GetErrChan returns a channels through which the caller can check and react to connectivity errors
+func (gateway *Gateway) GetErrChan() chan error {
+	return gateway.errors
 }
 
 func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interface{}) {
@@ -101,7 +107,12 @@ func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interf
 	gateway.writeMu.Unlock()
 
 	if err != nil {
-		fmt.Printf("conn.Write: %s\n", err)
+		select {
+		case gateway.errors <- err:
+		default:
+			fmt.Printf("conn.Write: %s\n", err)
+		}
+
 		return
 	}
 }
@@ -118,7 +129,12 @@ func (gateway *Gateway) ping() {
 		case <-ticker.C:
 			err := gateway.conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(20*time.Second))
 			if err != nil {
-				log.Println("ping:", err)
+				select {
+				case gateway.errors <- err:
+				default:
+					log.Println("ping:", err)
+				}
+
 				return
 			}
 		}
@@ -139,7 +155,12 @@ func (gateway *Gateway) recv() {
 
 		_, data, err := gateway.conn.ReadMessage()
 		if err != nil {
-			fmt.Printf("conn.Read: %s\n", err)
+			select {
+			case gateway.errors <- err:
+			default:
+				fmt.Printf("conn.Read: %s\n", err)
+			}
+
 			return
 		}
 
@@ -386,7 +407,7 @@ func (handle *Handle) send(msg map[string]interface{}, transaction chan interfac
 	handle.session.send(msg, transaction)
 }
 
-// send sync request
+// Request sends a sync request
 func (handle *Handle) Request(body interface{}) (*SuccessMsg, error) {
 	req, ch := newRequest("message")
 	if body != nil {
