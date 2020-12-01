@@ -8,12 +8,11 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/segmentio/ksuid"
 )
 
 var debug = false
@@ -28,6 +27,43 @@ func newRequest(method string) (map[string]interface{}, chan interface{}) {
 	return req, make(chan interface{})
 }
 
+type Transaction struct {
+	ID           string
+	StartedAt    time.Time
+	Used         bool
+	ResponseChan chan interface{}
+}
+
+type transactions struct {
+	transactions map[string]*Transaction
+	sync.Mutex
+}
+
+func (t *transactions) Add(id string, transaction *Transaction) {
+	t.Lock()
+	t.transactions[id] = transaction
+	t.Unlock()
+}
+
+func (t *transactions) Get(id string) (*Transaction, error) {
+	t.Lock()
+	defer t.Unlock()
+	if transaction, found := t.transactions[id]; found == true {
+		return transaction, nil
+	}
+	return nil, fmt.Errorf("Transaction '%s' not found", id)
+}
+
+func (t *transactions) Delete(id string) error {
+	t.Lock()
+	defer t.Unlock()
+	if _, found := t.transactions[id]; found == true {
+		delete(t.transactions, id)
+		return nil
+	}
+	return fmt.Errorf("Transaction '%s' not found", id)
+}
+
 // Gateway represents a connection to an instance of the Janus Gateway.
 type Gateway struct {
 	// Sessions is a map of the currently active sessions to the gateway.
@@ -37,13 +73,11 @@ type Gateway struct {
 	// and Gateway.Unlock() methods provided by the embeded sync.Mutex.
 	sync.Mutex
 
-	conn             *websocket.Conn
-	nextTransaction  uint64
-	transactions     map[uint64]chan interface{}
-	transactionsUsed map[uint64]bool
-	errors           chan error
-	sendChan         chan []byte
-	writeMu          sync.Mutex
+	conn         *websocket.Conn
+	transactions *transactions
+	errors       chan error
+	sendChan     chan []byte
+	writeMu      sync.Mutex
 }
 
 // Connect initiates a webscoket connection with the Janus Gateway
@@ -58,8 +92,7 @@ func Connect(wsURL string) (*Gateway, error) {
 
 	gateway := new(Gateway)
 	gateway.conn = conn
-	gateway.transactions = make(map[uint64]chan interface{})
-	gateway.transactionsUsed = make(map[uint64]bool)
+	gateway.transactions = &transactions{transactions: map[string]*Transaction{}}
 	gateway.Sessions = make(map[uint64]*Session)
 	gateway.sendChan = make(chan []byte, 100)
 	gateway.errors = make(chan error)
@@ -79,14 +112,12 @@ func (gateway *Gateway) GetErrChan() chan error {
 	return gateway.errors
 }
 
-func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interface{}) {
-	id := atomic.AddUint64(&gateway.nextTransaction, 1)
+func (gateway *Gateway) send(msg map[string]interface{}, transactionResp chan interface{}) {
+	id := ksuid.New()
+	transaction := &Transaction{ID: id.String(), ResponseChan: transactionResp, Used: false, StartedAt: time.Now()}
 
-	msg["transaction"] = strconv.FormatUint(id, 10)
-	gateway.Lock()
-	gateway.transactions[id] = transaction
-	gateway.transactionsUsed[id] = false
-	gateway.Unlock()
+	msg["transaction"] = transaction.ID
+	gateway.transactions.Add(transaction.ID, transaction)
 
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -148,11 +179,10 @@ func (gateway *Gateway) sendloop() {
 func (gateway *Gateway) recv() {
 
 	for {
-		// Read message from Gateway
 
-		// Decode to Msg struct
 		var base BaseMsg
 
+		// Read message from Gateway
 		_, data, err := gateway.conn.ReadMessage()
 		if err != nil {
 			select {
@@ -164,6 +194,7 @@ func (gateway *Gateway) recv() {
 			return
 		}
 
+		// Decode to Msg struct
 		if err := json.Unmarshal(data, &base); err != nil {
 			fmt.Printf("json.Unmarshal: %s\n", err)
 			continue
@@ -189,17 +220,13 @@ func (gateway *Gateway) recv() {
 			continue // Decode error
 		}
 
-		var transactionUsed bool
+		var transaction *Transaction
 		if base.ID != "" {
-			id, _ := strconv.ParseUint(base.ID, 10, 64)
-			gateway.Lock()
-			transactionUsed = gateway.transactionsUsed[id]
-			gateway.Unlock()
-
+			transaction, _ = gateway.transactions.Get(base.ID)
 		}
 
 		// Pass message on from here
-		if base.ID == "" || transactionUsed {
+		if transaction == nil {
 			// Is this a Handle event?
 			if base.Handle == 0 {
 				// Error()
@@ -226,21 +253,13 @@ func (gateway *Gateway) recv() {
 				go passMsg(handle.Events, msg)
 			}
 		} else {
-			id, _ := strconv.ParseUint(base.ID, 10, 64)
-			// Lookup Transaction
-			gateway.Lock()
-			transaction := gateway.transactions[id]
 			switch msg.(type) {
 			case *EventMsg:
-				gateway.transactionsUsed[id] = true
-			}
-			gateway.Unlock()
-			if transaction == nil {
-				// Error()
+				gateway.transactions.Delete(transaction.ID)
 			}
 
 			// Pass msg
-			go passMsg(transaction, msg)
+			go passMsg(transaction.ResponseChan, msg)
 		}
 	}
 }
