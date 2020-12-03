@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strconv"
 	"sync"
@@ -57,6 +58,8 @@ func Connect(wsURL string) (*Gateway, error) {
 	}
 
 	gateway := new(Gateway)
+	// Use a random starting offset to avoid colliding with other transactions
+	gateway.nextTransaction = rand.Uint64()
 	gateway.conn = conn
 	gateway.transactions = make(map[uint64]chan interface{})
 	gateway.transactionsUsed = make(map[uint64]bool)
