@@ -51,7 +51,6 @@ type Gateway struct {
 	transactions     map[uint64]chan interface{}
 	transactionsUsed map[uint64]bool
 	errors           chan error
-	sendChan         chan []byte
 }
 
 // Connect initiates a webscoket connection with the Janus Gateway
@@ -72,7 +71,6 @@ func Connect(ctx context.Context, wsURL string) (*Gateway, error) {
 	gateway.transactions = make(map[uint64]chan interface{})
 	gateway.transactionsUsed = make(map[uint64]bool)
 	gateway.Sessions = make(map[uint64]*Session)
-	gateway.sendChan = make(chan []byte, 100)
 	gateway.errors = make(chan error)
 
 	// we now expect these to be called by our caller
