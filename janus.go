@@ -52,7 +52,6 @@ type Gateway struct {
 	transactionsUsed map[uint64]bool
 	errors           chan error
 	sendChan         chan []byte
-	writeMu          sync.Mutex
 }
 
 // Connect initiates a webscoket connection with the Janus Gateway
@@ -98,8 +97,7 @@ func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, tr
 
 	data, err := json.Marshal(msg)
 	if err != nil {
-		fmt.Printf("json.Marshal: %s\n", err)
-		return
+		return err
 	}
 
 	if debug {
@@ -110,19 +108,9 @@ func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, tr
 		log.WriteTo(os.Stdout)
 	}
 
-	gateway.writeMu.Lock()
 	err = gateway.conn.Write(ctx, websocket.MessageText, data)
-	gateway.writeMu.Unlock()
+	return err
 
-	if err != nil {
-		select {
-		case gateway.errors <- err:
-		default:
-			fmt.Printf("conn.Write: %s\n", err)
-		}
-
-		return
-	}
 }
 
 func passMsg(ch chan interface{}, msg interface{}) {
