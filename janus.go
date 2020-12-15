@@ -153,9 +153,7 @@ func (gateway *Gateway) Ping(ctx context.Context) {
 	}
 }
 
-func (gateway *Gateway) sendloop() {
 
-}
 
 // Receiver should be started as a goroutine
 func (gateway *Gateway) Receiver(ctx context.Context) {
