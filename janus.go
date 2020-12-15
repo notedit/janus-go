@@ -114,9 +114,7 @@ func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, tr
 }
 
 func passMsg(ch chan interface{}, msg interface{}) {
-	fmt.Println(msg)
 	ch <- msg
-	fmt.Println(88888)
 }
 
 // Ping should be started as a goroutine,
