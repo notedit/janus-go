@@ -51,7 +51,6 @@ type Gateway struct {
 	transactions     map[uint64]chan interface{}
 	transactionsUsed map[uint64]bool
 	errors           chan error
-	shutdown         chan bool
 	sendChan         chan []byte
 	writeMu          sync.Mutex
 }
@@ -76,7 +75,6 @@ func Connect(ctx context.Context, wsURL string) (*Gateway, error) {
 	gateway.Sessions = make(map[uint64]*Session)
 	gateway.sendChan = make(chan []byte, 100)
 	gateway.errors = make(chan error)
-	gateway.shutdown = make(chan bool)
 
 	// we now expect these to be called by our caller
 	// go gateway.Ping(ctx)
@@ -86,7 +84,6 @@ func Connect(ctx context.Context, wsURL string) (*Gateway, error) {
 
 // Close closes the underlying connection to the Gateway.
 func (gateway *Gateway) Close(code websocket.StatusCode, reason string) error {
-	gateway.shutdown <- false
 	return gateway.conn.Close(code, reason)
 }
 
@@ -144,8 +141,8 @@ func (gateway *Gateway) Ping(ctx context.Context) {
 	defer ticker.Stop()
 	for {
 		select {
-		case <-gateway.shutdown:
-			return
+		case <-ctx.Done():
+			return ctx.Err()
 		case <-ticker.C:
 			err := gateway.conn.Write(ctx, 9, []byte{})
 			if err != nil {
