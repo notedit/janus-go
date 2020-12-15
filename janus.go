@@ -84,8 +84,6 @@ type Gateway struct {
 
 // Connect initiates a webscoket connection with the Janus Gateway
 func Connect(ctx context.Context, wsURL string) (*Gateway, error) {
-	//websocket.DefaultDialer.Subprotocols = []string{"janus-protocol"}
-	//websocket.DialOptions.Subprotocols=nil
 	opts := &websocket.DialOptions{Subprotocols: []string{"janus-protocol"}}
 
 	conn, _, err := websocket.Dial(ctx, wsURL, opts)
@@ -155,9 +153,7 @@ func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, tr
 }
 
 func passMsg(ch chan interface{}, msg interface{}) {
-	fmt.Println(msg)
 	ch <- msg
-	fmt.Println(88888)
 }
 
 func (gateway *Gateway) ping(ctx context.Context) {
