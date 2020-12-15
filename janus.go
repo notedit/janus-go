@@ -87,12 +87,7 @@ func (gateway *Gateway) Close(code websocket.StatusCode, reason string) error {
 	return gateway.conn.Close(code, reason)
 }
 
-// GetErrChan returns a channels through which the caller can check and react to connectivity errors
-func (gateway *Gateway) GetErrChan() chan error {
-	return gateway.errors
-}
-
-func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, transaction chan interface{}) {
+func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, transaction chan interface{}) error {
 	id := atomic.AddUint64(&gateway.nextTransaction, 1)
 
 	msg["transaction"] = strconv.FormatUint(id, 10)
