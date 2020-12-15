@@ -49,6 +49,7 @@ type Gateway struct {
 }
 
 // Connect initiates a webscoket connection with the Janus Gateway
+// you must start Ping and Receiver when using this
 func Connect(ctx context.Context, wsURL string) (*Gateway, error) {
 	//websocket.DefaultDialer.Subprotocols = []string{"janus-protocol"}
 	//websocket.DialOptions.Subprotocols=nil
@@ -69,8 +70,9 @@ func Connect(ctx context.Context, wsURL string) (*Gateway, error) {
 	gateway.errors = make(chan error)
 	gateway.shutdown = make(chan bool)
 
-	go gateway.ping(ctx)
-	go gateway.recv(ctx)
+	// we now expect these to be called by our caller
+	// go gateway.Ping(ctx)
+	// go gateway.Receiver(ctx)
 	return gateway, nil
 }
 
@@ -129,7 +131,7 @@ func passMsg(ch chan interface{}, msg interface{}) {
 	fmt.Println(88888)
 }
 
-func (gateway *Gateway) ping(ctx context.Context) {
+func (gateway *Gateway) Ping(ctx context.Context) {
 	ticker := time.NewTicker(time.Second * 30)
 	defer ticker.Stop()
 	for {
@@ -142,7 +144,7 @@ func (gateway *Gateway) ping(ctx context.Context) {
 				select {
 				case gateway.errors <- err:
 				default:
-					log.Println("ping:", err)
+					log.Println("Ping:", err)
 				}
 
 				return
@@ -155,7 +157,8 @@ func (gateway *Gateway) sendloop() {
 
 }
 
-func (gateway *Gateway) recv(ctx context.Context) {
+// Receiver should be started as a goroutine
+func (gateway *Gateway) Receiver(ctx context.Context) {
 
 	for {
 		// Read message from Gateway
