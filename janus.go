@@ -18,11 +18,11 @@ import (
 
 // The message types are defined in RFC 6455, section 11.8.
 const (
-	TextMessage = 1
+	TextMessage   = 1
 	BinaryMessage = 2
-	CloseMessage = 8
-	PingMessage = 9
-	PongMessage = 10
+	CloseMessage  = 8
+	PingMessage   = 9
+	PongMessage   = 10
 )
 
 var debug = false
@@ -133,10 +133,8 @@ func (gateway *Gateway) Ping(ctx context.Context) error {
 	}
 }
 
-
-
 // Receiver should be started as a goroutine
-func (gateway *Gateway) Receiver(ctx context.Context) {
+func (gateway *Gateway) Receiver(ctx context.Context) error {
 
 	for {
 		// Read message from Gateway
@@ -146,12 +144,7 @@ func (gateway *Gateway) Receiver(ctx context.Context) {
 
 		_, data, err := gateway.conn.Read(ctx)
 		if err != nil {
-			select {
-			default:
-				fmt.Printf("conn.Read: %s\n", err)
-			}
-
-			return
+			return err
 		}
 
 		if err := json.Unmarshal(data, &base); err != nil {
