@@ -1,24 +1,38 @@
 package janus
 
 import (
+	"context"
 	"testing"
 )
 
 func Test_Connect(t *testing.T) {
 
-	client, err := Connect("ws://39.106.248.166:8188/")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel() // cancel when we are finished consuming integers
+
+	
+
+
+	
+	client, err := Connect(ctx,"ws://localhost:8188/")
 	if err != nil {
 		t.Fail()
 		return
 	}
-	mess, err := client.Info()
+
+	go client.Receiver(ctx)
+	go client.Ping(ctx)
+
+
+
+	mess, err := client.Info(ctx)
 	if err != nil {
 		t.Fail()
 		return
 	}
 	t.Log(mess)
 
-	sess, err := client.Create()
+	sess, err := client.Create(ctx)
 	if err != nil {
 		t.Fail()
 		return
