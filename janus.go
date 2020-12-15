@@ -16,7 +16,7 @@ import (
 	"nhooyr.io/websocket"
 )
 
-var debug = false
+var debug = true
 
 func unexpected(request string) error {
 	return fmt.Errorf("Unexpected response received to '%s' request", request)
@@ -176,10 +176,6 @@ func (gateway *Gateway) ping(ctx context.Context) {
 			}
 		}
 	}
-}
-
-func (gateway *Gateway) sendloop() {
-
 }
 
 func (gateway *Gateway) recv(ctx context.Context) {
@@ -440,7 +436,11 @@ func (handle *Handle) Request(ctx context.Context, body interface{}) (*SuccessMs
 	}
 	handle.send(ctx, req, ch)
 
+	fmt.Println(".... waiting for message on ", handle.ID)
+
 	msg := <-ch
+
+	fmt.Println(".... received message", handle.ID)
 
 	switch msg := msg.(type) {
 	case *SuccessMsg:
