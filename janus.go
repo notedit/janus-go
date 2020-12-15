@@ -16,7 +16,7 @@ import (
 	"nhooyr.io/websocket"
 )
 
-var debug = true
+var debug = false
 
 func unexpected(request string) error {
 	return fmt.Errorf("Unexpected response received to '%s' request", request)
@@ -116,9 +116,9 @@ func (gateway *Gateway) GetErrChan() chan error {
 	return gateway.errors
 }
 
-func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, transactionResp chan interface{}) {
+func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, responseChan chan interface{}) {
 	id := ksuid.New()
-	transaction := &Transaction{ID: id.String(), ResponseChan: transactionResp, Used: false, StartedAt: time.Now()}
+	transaction := &Transaction{ID: id.String(), ResponseChan: responseChan, Used: false, StartedAt: time.Now()}
 
 	msg["transaction"] = transaction.ID
 	gateway.transactions.Add(transaction.ID, transaction)
@@ -136,6 +136,8 @@ func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, tr
 		log.Write([]byte("\n"))
 		log.WriteTo(os.Stdout)
 	}
+
+	fmt.Println(".... sending transaction ", id)
 
 	gateway.writeMu.Lock()
 	err = gateway.conn.Write(ctx, websocket.MessageText, data)
@@ -260,6 +262,8 @@ func (gateway *Gateway) recv(ctx context.Context) {
 				gateway.transactions.Delete(transaction.ID)
 			}
 
+			fmt.Println(".... received transaction ", transaction.ID)
+
 			// Pass msg
 			go passMsg(transaction.ResponseChan, msg)
 		}
@@ -330,9 +334,9 @@ type Session struct {
 	gateway *Gateway
 }
 
-func (session *Session) send(ctx context.Context, msg map[string]interface{}, transaction chan interface{}) {
+func (session *Session) send(ctx context.Context, msg map[string]interface{}, responseChan chan interface{}) {
 	msg["session_id"] = session.ID
-	session.gateway.send(ctx, msg, transaction)
+	session.gateway.send(ctx, msg, responseChan)
 }
 
 // Attach sends an attach request to the Gateway within this session.
@@ -423,22 +427,22 @@ type Handle struct {
 	session *Session
 }
 
-func (handle *Handle) send(ctx context.Context, msg map[string]interface{}, transaction chan interface{}) {
+func (handle *Handle) send(ctx context.Context, msg map[string]interface{}, responseChan chan interface{}) {
 	msg["handle_id"] = handle.ID
-	handle.session.send(ctx, msg, transaction)
+	handle.session.send(ctx, msg, responseChan)
 }
 
 // Request sends a sync request
 func (handle *Handle) Request(ctx context.Context, body interface{}) (*SuccessMsg, error) {
-	req, ch := newRequest("message")
+	req, respCh := newRequest("message")
 	if body != nil {
 		req["body"] = body
 	}
-	handle.send(ctx, req, ch)
+	handle.send(ctx, req, respCh)
 
 	fmt.Println(".... waiting for message on ", handle.ID)
 
-	msg := <-ch
+	msg := <-respCh
 
 	fmt.Println(".... received message", handle.ID)
 
