@@ -1,4 +1,4 @@
-module github.com/notedit/janus-go
+module github.com/verbinc/janus-go
 
 go 1.15
 
