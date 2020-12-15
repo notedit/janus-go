@@ -131,7 +131,11 @@ func passMsg(ch chan interface{}, msg interface{}) {
 	fmt.Println(88888)
 }
 
-func (gateway *Gateway) Ping(ctx context.Context) {
+// Ping should be started as a goroutine,
+// it will periodically send a ping over the wire
+// to keep Janus happy with the gateway connection
+//
+func (gateway *Gateway) Ping(ctx context.Context) error {
 	ticker := time.NewTicker(time.Second * 30)
 	defer ticker.Stop()
 	for {
@@ -139,15 +143,9 @@ func (gateway *Gateway) Ping(ctx context.Context) {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			err := gateway.conn.Write(ctx, 9, []byte{})
+			err := gateway.conn.Write(ctx, PingMessage, []byte{})
 			if err != nil {
-				select {
-				case gateway.errors <- err:
-				default:
-					log.Println("Ping:", err)
-				}
-
-				return
+				return err
 			}
 		}
 	}
