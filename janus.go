@@ -71,7 +71,7 @@ func Connect(ctx context.Context, wsURL string) (*Gateway, error) {
 	gateway.transactionsUsed = make(map[uint64]bool)
 	gateway.Sessions = make(map[uint64]*Session)
 
-	// we now expect these to be called by our caller
+	// we now expect these to be started by our caller
 	// go gateway.Ping(ctx)
 	// go gateway.Receiver(ctx)
 	return gateway, nil
