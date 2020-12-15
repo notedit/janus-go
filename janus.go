@@ -148,8 +148,7 @@ func (gateway *Gateway) Receiver(ctx context.Context) error {
 		}
 
 		if err := json.Unmarshal(data, &base); err != nil {
-			fmt.Printf("json.Unmarshal: %s\n", err)
-			continue
+			return err
 		}
 
 		if debug {
