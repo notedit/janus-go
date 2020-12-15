@@ -14,7 +14,10 @@ Basically, I am
 
 
 Here are the changes I am working on:
-1. Switch to [nhooyr/websocket](https://github.com/nhooyr/websocket) for websockets, the big win here IMHO is context.Context support which better supports [structured concurrency](https://medium.com/swlh/managing-groups-of-gorutines-in-go-ee7523e3eaca) which in theory can help concurrency robustness when done well.
+1. Switch to [nhooyr/websocket](https://github.com/nhooyr/websocket) for websockets, the big win here IMHO is context.Context support which better supports [structured concurrency](https://bionic.fullstory.com/why-you-should-be-using-errgroup-withcontext-in-golang-server-handlers/) which in theory can help concurrency robustness when done well. 
+A maybe simpler article on [Structured Concurrency, on Medium](https://medium.com/swlh/managing-groups-of-gorutines-in-go-ee7523e3eaca)
+
+
 - Hope to remove goroutine creation in the library, I usually prefer to do this as a library's caller, as it makes it easier for me to think/reason about thread/goroutine issues
 - Hope to remove chan creation in the library, again I like to create these externally to libraries I use if possible, it can make thinking/reasoning about robustness easier for me.
 - Plan to use a lint or static analysis tool to make sure there are no missed errors
