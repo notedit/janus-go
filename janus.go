@@ -440,11 +440,11 @@ func (handle *Handle) Request(ctx context.Context, body interface{}) (*SuccessMs
 	}
 	handle.send(ctx, req, respCh)
 
-	fmt.Println(".... waiting for message on ", handle.ID)
+	fmt.Println(".... waiting for message on ", handle.Type, handle.ID)
 
 	msg := <-respCh
 
-	fmt.Println(".... received message", handle.ID)
+	fmt.Println(".... received message", handle.Type, handle.ID)
 
 	switch msg := msg.(type) {
 	case *SuccessMsg:
