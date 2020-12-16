@@ -4,16 +4,16 @@ package janus
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/segmentio/ksuid"
+	"nhooyr.io/websocket"
 )
 
 var debug = false
@@ -28,6 +28,44 @@ func newRequest(method string) (map[string]interface{}, chan interface{}) {
 	return req, make(chan interface{})
 }
 
+type Transaction struct {
+	ID           string
+	StartedAt    time.Time
+	Used         bool
+	ResponseChan chan interface{}
+	closeSig     chan interface{}
+}
+
+type transactions struct {
+	transactions map[string]*Transaction
+	sync.Mutex
+}
+
+func (t *transactions) Add(id string, transaction *Transaction) {
+	t.Lock()
+	t.transactions[id] = transaction
+	t.Unlock()
+}
+
+func (t *transactions) Get(id string) (*Transaction, error) {
+	t.Lock()
+	defer t.Unlock()
+	if transaction, found := t.transactions[id]; found == true {
+		return transaction, nil
+	}
+	return nil, fmt.Errorf("Transaction '%s' not found", id)
+}
+
+func (t *transactions) Delete(id string) error {
+	t.Lock()
+	defer t.Unlock()
+	if _, found := t.transactions[id]; found == true {
+		delete(t.transactions, id)
+		return nil
+	}
+	return fmt.Errorf("Transaction '%s' not found", id)
+}
+
 // Gateway represents a connection to an instance of the Janus Gateway.
 type Gateway struct {
 	// Sessions is a map of the currently active sessions to the gateway.
@@ -37,20 +75,19 @@ type Gateway struct {
 	// and Gateway.Unlock() methods provided by the embeded sync.Mutex.
 	sync.Mutex
 
-	conn             *websocket.Conn
-	nextTransaction  uint64
-	transactions     map[uint64]chan interface{}
-	transactionsUsed map[uint64]bool
-	errors           chan error
-	sendChan         chan []byte
-	writeMu          sync.Mutex
+	conn         *websocket.Conn
+	transactions *transactions
+	errors       chan error
+	shutdown     chan bool
+	sendChan     chan []byte
+	writeMu      sync.Mutex
 }
 
 // Connect initiates a webscoket connection with the Janus Gateway
-func Connect(wsURL string) (*Gateway, error) {
-	websocket.DefaultDialer.Subprotocols = []string{"janus-protocol"}
+func Connect(ctx context.Context, wsURL string) (*Gateway, error) {
+	opts := &websocket.DialOptions{Subprotocols: []string{"janus-protocol"}}
 
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	conn, _, err := websocket.Dial(ctx, wsURL, opts)
 
 	if err != nil {
 		return nil, err
@@ -58,20 +95,21 @@ func Connect(wsURL string) (*Gateway, error) {
 
 	gateway := new(Gateway)
 	gateway.conn = conn
-	gateway.transactions = make(map[uint64]chan interface{})
-	gateway.transactionsUsed = make(map[uint64]bool)
+	gateway.transactions = &transactions{transactions: map[string]*Transaction{}}
 	gateway.Sessions = make(map[uint64]*Session)
 	gateway.sendChan = make(chan []byte, 100)
 	gateway.errors = make(chan error)
+	gateway.shutdown = make(chan bool)
 
-	go gateway.ping()
-	go gateway.recv()
+	go gateway.ping(ctx)
+	go gateway.recv(ctx)
 	return gateway, nil
 }
 
 // Close closes the underlying connection to the Gateway.
-func (gateway *Gateway) Close() error {
-	return gateway.conn.Close()
+func (gateway *Gateway) Close(code websocket.StatusCode, reason string) error {
+	gateway.shutdown <- false
+	return gateway.conn.Close(code, reason)
 }
 
 // GetErrChan returns a channels through which the caller can check and react to connectivity errors
@@ -79,14 +117,12 @@ func (gateway *Gateway) GetErrChan() chan error {
 	return gateway.errors
 }
 
-func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interface{}) {
-	id := atomic.AddUint64(&gateway.nextTransaction, 1)
+func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, responseChan chan interface{}) {
+	id := ksuid.New()
+	transaction := &Transaction{ID: id.String(), ResponseChan: responseChan, closeSig: make(chan interface{}), Used: false, StartedAt: time.Now()}
 
-	msg["transaction"] = strconv.FormatUint(id, 10)
-	gateway.Lock()
-	gateway.transactions[id] = transaction
-	gateway.transactionsUsed[id] = false
-	gateway.Unlock()
+	msg["transaction"] = transaction.ID
+	gateway.transactions.Add(transaction.ID, transaction)
 
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -103,8 +139,27 @@ func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interf
 	}
 
 	gateway.writeMu.Lock()
-	err = gateway.conn.WriteMessage(websocket.TextMessage, data)
+	err = gateway.conn.Write(ctx, websocket.MessageText, data)
 	gateway.writeMu.Unlock()
+
+	go func() {
+		// we sleep for the timeout period
+		time.Sleep(time.Second * 3)
+
+		// if the closeSig channel is closed, the transaction has been processed, so we return without sending the timeout error and closing the chans
+		select {
+		case <-transaction.closeSig:
+			return
+		default:
+		}
+
+		// we close the closeSig channel so any response from the handler is discarded
+		close(transaction.closeSig)
+
+		transaction.ResponseChan <- &ErrorMsg{Err: ErrorData{Code: 408, Reason: "Request timed out"}}
+		close(transaction.ResponseChan)
+		gateway.transactions.Delete(transaction.ID)
+	}()
 
 	if err != nil {
 		select {
@@ -117,17 +172,15 @@ func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interf
 	}
 }
 
-func passMsg(ch chan interface{}, msg interface{}) {
-	ch <- msg
-}
-
-func (gateway *Gateway) ping() {
+func (gateway *Gateway) ping(ctx context.Context) {
 	ticker := time.NewTicker(time.Second * 30)
 	defer ticker.Stop()
 	for {
 		select {
+		case <-gateway.shutdown:
+			return
 		case <-ticker.C:
-			err := gateway.conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(20*time.Second))
+			err := gateway.conn.Write(ctx, 9, []byte{})
 			if err != nil {
 				select {
 				case gateway.errors <- err:
@@ -141,19 +194,14 @@ func (gateway *Gateway) ping() {
 	}
 }
 
-func (gateway *Gateway) sendloop() {
-
-}
-
-func (gateway *Gateway) recv() {
+func (gateway *Gateway) recv(ctx context.Context) {
 
 	for {
-		// Read message from Gateway
 
-		// Decode to Msg struct
 		var base BaseMsg
 
-		_, data, err := gateway.conn.ReadMessage()
+		// Read message from Gateway
+		_, data, err := gateway.conn.Read(ctx)
 		if err != nil {
 			select {
 			case gateway.errors <- err:
@@ -164,6 +212,7 @@ func (gateway *Gateway) recv() {
 			return
 		}
 
+		// Decode to Msg struct
 		if err := json.Unmarshal(data, &base); err != nil {
 			fmt.Printf("json.Unmarshal: %s\n", err)
 			continue
@@ -189,17 +238,13 @@ func (gateway *Gateway) recv() {
 			continue // Decode error
 		}
 
-		var transactionUsed bool
+		var transaction *Transaction
 		if base.ID != "" {
-			id, _ := strconv.ParseUint(base.ID, 10, 64)
-			gateway.Lock()
-			transactionUsed = gateway.transactionsUsed[id]
-			gateway.Unlock()
-
+			transaction, _ = gateway.transactions.Get(base.ID)
 		}
 
 		// Pass message on from here
-		if base.ID == "" || transactionUsed {
+		if transaction == nil {
 			// Is this a Handle event?
 			if base.Handle == 0 {
 				// Error()
@@ -222,34 +267,32 @@ func (gateway *Gateway) recv() {
 					continue
 				}
 
-				// Pass msg
-				go passMsg(handle.Events, msg)
+				// Send response
+				handle.Events <- msg
 			}
 		} else {
-			id, _ := strconv.ParseUint(base.ID, 10, 64)
-			// Lookup Transaction
-			gateway.Lock()
-			transaction := gateway.transactions[id]
-			switch msg.(type) {
-			case *EventMsg:
-				gateway.transactionsUsed[id] = true
-			}
-			gateway.Unlock()
-			if transaction == nil {
-				// Error()
+			// if the closeSig channel is closed, the request has timed out, so we return without sending the response received
+			select {
+			case <-transaction.closeSig:
+				continue
+			default:
 			}
 
-			// Pass msg
-			go passMsg(transaction, msg)
+			close(transaction.closeSig)
+
+			// Send response and close chan
+			transaction.ResponseChan <- msg
+			close(transaction.ResponseChan)
+			gateway.transactions.Delete(transaction.ID)
 		}
 	}
 }
 
 // Info sends an info request to the Gateway.
 // On success, an InfoMsg will be returned and error will be nil.
-func (gateway *Gateway) Info() (*InfoMsg, error) {
+func (gateway *Gateway) Info(ctx context.Context) (*InfoMsg, error) {
 	req, ch := newRequest("info")
-	gateway.send(req, ch)
+	gateway.send(ctx, req, ch)
 
 	msg := <-ch
 	switch msg := msg.(type) {
@@ -264,9 +307,9 @@ func (gateway *Gateway) Info() (*InfoMsg, error) {
 
 // Create sends a create request to the Gateway.
 // On success, a new Session will be returned and error will be nil.
-func (gateway *Gateway) Create() (*Session, error) {
+func (gateway *Gateway) Create(ctx context.Context) (*Session, error) {
 	req, ch := newRequest("create")
-	gateway.send(req, ch)
+	gateway.send(ctx, req, ch)
 
 	msg := <-ch
 	var success *SuccessMsg
@@ -309,18 +352,18 @@ type Session struct {
 	gateway *Gateway
 }
 
-func (session *Session) send(msg map[string]interface{}, transaction chan interface{}) {
+func (session *Session) send(ctx context.Context, msg map[string]interface{}, responseChan chan interface{}) {
 	msg["session_id"] = session.ID
-	session.gateway.send(msg, transaction)
+	session.gateway.send(ctx, msg, responseChan)
 }
 
 // Attach sends an attach request to the Gateway within this session.
 // plugin should be the unique string of the plugin to attach to.
 // On success, a new Handle will be returned and error will be nil.
-func (session *Session) Attach(plugin string) (*Handle, error) {
+func (session *Session) Attach(ctx context.Context, plugin string) (*Handle, error) {
 	req, ch := newRequest("attach")
 	req["plugin"] = plugin
-	session.send(req, ch)
+	session.send(ctx, req, ch)
 
 	var success *SuccessMsg
 	msg := <-ch
@@ -345,9 +388,9 @@ func (session *Session) Attach(plugin string) (*Handle, error) {
 
 // KeepAlive sends a keep-alive request to the Gateway.
 // On success, an AckMsg will be returned and error will be nil.
-func (session *Session) KeepAlive() (*AckMsg, error) {
+func (session *Session) KeepAlive(ctx context.Context) (*AckMsg, error) {
 	req, ch := newRequest("keepalive")
-	session.send(req, ch)
+	session.send(ctx, req, ch)
 
 	msg := <-ch
 	switch msg := msg.(type) {
@@ -363,9 +406,9 @@ func (session *Session) KeepAlive() (*AckMsg, error) {
 // Destroy sends a destroy request to the Gateway to tear down this session.
 // On success, the Session will be removed from the Gateway.Sessions map, an
 // AckMsg will be returned and error will be nil.
-func (session *Session) Destroy() (*AckMsg, error) {
+func (session *Session) Destroy(ctx context.Context) (*AckMsg, error) {
 	req, ch := newRequest("destroy")
-	session.send(req, ch)
+	session.send(ctx, req, ch)
 
 	var ack *AckMsg
 	msg := <-ch
@@ -402,20 +445,23 @@ type Handle struct {
 	session *Session
 }
 
-func (handle *Handle) send(msg map[string]interface{}, transaction chan interface{}) {
+func (handle *Handle) send(ctx context.Context, msg map[string]interface{}, responseChan chan interface{}) {
 	msg["handle_id"] = handle.ID
-	handle.session.send(msg, transaction)
+	handle.session.send(ctx, msg, responseChan)
 }
 
 // Request sends a sync request
-func (handle *Handle) Request(body interface{}) (*SuccessMsg, error) {
-	req, ch := newRequest("message")
+func (handle *Handle) Request(ctx context.Context, body interface{}) (*SuccessMsg, error) {
+	req, respCh := newRequest("message")
 	if body != nil {
 		req["body"] = body
 	}
-	handle.send(req, ch)
 
-	msg := <-ch
+	// sending request
+	handle.send(ctx, req, respCh)
+
+	// waiting for response or timeout
+	msg := <-respCh
 
 	switch msg := msg.(type) {
 	case *SuccessMsg:
@@ -431,7 +477,7 @@ func (handle *Handle) Request(body interface{}) (*SuccessMsg, error) {
 // body should be the plugin data to be passed to the plugin, and jsep should
 // contain an optional SDP offer/answer to establish a WebRTC PeerConnection.
 // On success, an EventMsg will be returned and error will be nil.
-func (handle *Handle) Message(body, jsep interface{}) (*EventMsg, error) {
+func (handle *Handle) Message(ctx context.Context, body, jsep interface{}) (*EventMsg, error) {
 	req, ch := newRequest("message")
 	if body != nil {
 		req["body"] = body
@@ -439,7 +485,7 @@ func (handle *Handle) Message(body, jsep interface{}) (*EventMsg, error) {
 	if jsep != nil {
 		req["jsep"] = jsep
 	}
-	handle.send(req, ch)
+	handle.send(ctx, req, ch)
 
 GetMessage: // No tears..
 	msg := <-ch
@@ -463,10 +509,10 @@ GetMessage: // No tears..
 //			"completed": true
 //		}
 // On success, an AckMsg will be returned and error will be nil.
-func (handle *Handle) Trickle(candidate interface{}) (*AckMsg, error) {
+func (handle *Handle) Trickle(ctx context.Context, candidate interface{}) (*AckMsg, error) {
 	req, ch := newRequest("trickle")
 	req["candidate"] = candidate
-	handle.send(req, ch)
+	handle.send(ctx, req, ch)
 
 	msg := <-ch
 	switch msg := msg.(type) {
@@ -483,10 +529,10 @@ func (handle *Handle) Trickle(candidate interface{}) (*AckMsg, error) {
 // a new PeerConnection with a plugin.
 // candidates should be an array of ICE candidates.
 // On success, an AckMsg will be returned and error will be nil.
-func (handle *Handle) TrickleMany(candidates interface{}) (*AckMsg, error) {
+func (handle *Handle) TrickleMany(ctx context.Context, candidates interface{}) (*AckMsg, error) {
 	req, ch := newRequest("trickle")
 	req["candidates"] = candidates
-	handle.send(req, ch)
+	handle.send(ctx, req, ch)
 
 	msg := <-ch
 	switch msg := msg.(type) {
@@ -501,9 +547,9 @@ func (handle *Handle) TrickleMany(candidates interface{}) (*AckMsg, error) {
 
 // Detach sends a detach request to the Gateway to remove this handle.
 // On success, an AckMsg will be returned and error will be nil.
-func (handle *Handle) Detach() (*AckMsg, error) {
+func (handle *Handle) Detach(ctx context.Context) (*AckMsg, error) {
 	req, ch := newRequest("detach")
-	handle.send(req, ch)
+	handle.send(ctx, req, ch)
 
 	var ack *AckMsg
 	msg := <-ch
