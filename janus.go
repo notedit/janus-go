@@ -156,9 +156,7 @@ func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, re
 		// we close the closeSig channel so any response from the handler is discarded
 		close(transaction.closeSig)
 
-		fmt.Println(".... timeout waiting for transaction ", id)
-
-		transaction.ResponseChan <- &ErrorMsg{Err: ErrorData{Code: 408, Reason: fmt.Sprintf("Timeout waiting for request '%s'", transaction.ID)}}
+		transaction.ResponseChan <- &ErrorMsg{Err: ErrorData{Code: 408, Reason: "Request timed out"}}
 		close(transaction.ResponseChan)
 		gateway.transactions.Delete(transaction.ID)
 	}()
