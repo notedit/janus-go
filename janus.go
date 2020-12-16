@@ -138,8 +138,6 @@ func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, re
 		log.WriteTo(os.Stdout)
 	}
 
-	fmt.Println(".... sending transaction ", id)
-
 	gateway.writeMu.Lock()
 	err = gateway.conn.Write(ctx, websocket.MessageText, data)
 	gateway.writeMu.Unlock()
@@ -157,6 +155,8 @@ func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, re
 
 		// we close the closeSig channel so any response from the handler is discarded
 		close(transaction.closeSig)
+
+		fmt.Println(".... timeout waiting for transaction ", id)
 
 		transaction.ResponseChan <- &ErrorMsg{Err: ErrorData{Code: 408, Reason: fmt.Sprintf("Timeout waiting for request '%s'", transaction.ID)}}
 		close(transaction.ResponseChan)
@@ -273,8 +273,6 @@ func (gateway *Gateway) recv(ctx context.Context) {
 				handle.Events <- msg
 			}
 		} else {
-			fmt.Println(".... received transaction ", transaction.ID)
-
 			// if the closeSig channel is closed, the request has timed out, so we return without sending the response received
 			select {
 			case <-transaction.closeSig:
