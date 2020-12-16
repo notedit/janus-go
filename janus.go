@@ -273,27 +273,21 @@ func (gateway *Gateway) recv(ctx context.Context) {
 				handle.Events <- msg
 			}
 		} else {
-			switch msg.(type) {
-			case *EventMsg:
-				fmt.Println(".... received transaction ", transaction.ID)
+			fmt.Println(".... received transaction ", transaction.ID)
 
-				// if the closeSig channel is closed, the request has timed out, so we return without sending the response received
-				select {
-				case <-transaction.closeSig:
-					continue
-				default:
-				}
-
-				close(transaction.closeSig)
-
-				// Send response and close chan
-				transaction.ResponseChan <- msg
-				close(transaction.ResponseChan)
-				gateway.transactions.Delete(transaction.ID)
+			// if the closeSig channel is closed, the request has timed out, so we return without sending the response received
+			select {
+			case <-transaction.closeSig:
+				continue
 			default:
-				transaction.ResponseChan <- msg
-				close(transaction.ResponseChan)
 			}
+
+			close(transaction.closeSig)
+
+			// Send response and close chan
+			transaction.ResponseChan <- msg
+			close(transaction.ResponseChan)
+			gateway.transactions.Delete(transaction.ID)
 		}
 	}
 }
