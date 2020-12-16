@@ -8,12 +8,11 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/rs/xid"
 )
 
 var debug = false
@@ -38,12 +37,15 @@ type Gateway struct {
 	sync.Mutex
 
 	conn             *websocket.Conn
-	nextTransaction  uint64
-	transactions     map[uint64]chan interface{}
-	transactionsUsed map[uint64]bool
+	transactions     map[xid.ID]chan interface{}
+	transactionsUsed map[xid.ID]bool
 	errors           chan error
 	sendChan         chan []byte
 	writeMu          sync.Mutex
+}
+
+func generateTransactionId() xid.ID {
+	return xid.New()
 }
 
 // Connect initiates a webscoket connection with the Janus Gateway
@@ -58,8 +60,8 @@ func Connect(wsURL string) (*Gateway, error) {
 
 	gateway := new(Gateway)
 	gateway.conn = conn
-	gateway.transactions = make(map[uint64]chan interface{})
-	gateway.transactionsUsed = make(map[uint64]bool)
+	gateway.transactions = make(map[xid.ID]chan interface{})
+	gateway.transactionsUsed = make(map[xid.ID]bool)
 	gateway.Sessions = make(map[uint64]*Session)
 	gateway.sendChan = make(chan []byte, 100)
 	gateway.errors = make(chan error)
@@ -80,12 +82,12 @@ func (gateway *Gateway) GetErrChan() chan error {
 }
 
 func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interface{}) {
-	id := atomic.AddUint64(&gateway.nextTransaction, 1)
+	guid := generateTransactionId()
 
-	msg["transaction"] = strconv.FormatUint(id, 10)
+	msg["transaction"] = guid.String()
 	gateway.Lock()
-	gateway.transactions[id] = transaction
-	gateway.transactionsUsed[id] = false
+	gateway.transactions[guid] = transaction
+	gateway.transactionsUsed[guid] = false
 	gateway.Unlock()
 
 	data, err := json.Marshal(msg)
@@ -191,7 +193,7 @@ func (gateway *Gateway) recv() {
 
 		var transactionUsed bool
 		if base.ID != "" {
-			id, _ := strconv.ParseUint(base.ID, 10, 64)
+			id, _ := xid.FromString(base.ID)
 			gateway.Lock()
 			transactionUsed = gateway.transactionsUsed[id]
 			gateway.Unlock()
@@ -226,7 +228,7 @@ func (gateway *Gateway) recv() {
 				go passMsg(handle.Events, msg)
 			}
 		} else {
-			id, _ := strconv.ParseUint(base.ID, 10, 64)
+			id, _ := xid.FromString(base.ID)
 			// Lookup Transaction
 			gateway.Lock()
 			transaction := gateway.transactions[id]
