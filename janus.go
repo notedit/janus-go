@@ -33,6 +33,7 @@ type Transaction struct {
 	StartedAt    time.Time
 	Used         bool
 	ResponseChan chan interface{}
+	closeSig     chan interface{}
 }
 
 type transactions struct {
@@ -118,7 +119,7 @@ func (gateway *Gateway) GetErrChan() chan error {
 
 func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, responseChan chan interface{}) {
 	id := ksuid.New()
-	transaction := &Transaction{ID: id.String(), ResponseChan: responseChan, Used: false, StartedAt: time.Now()}
+	transaction := &Transaction{ID: id.String(), ResponseChan: responseChan, closeSig: make(chan interface{}), Used: false, StartedAt: time.Now()}
 
 	msg["transaction"] = transaction.ID
 	gateway.transactions.Add(transaction.ID, transaction)
@@ -143,6 +144,25 @@ func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, re
 	err = gateway.conn.Write(ctx, websocket.MessageText, data)
 	gateway.writeMu.Unlock()
 
+	go func() {
+		// we sleep for the timeout period
+		time.Sleep(time.Second * 3)
+
+		// if the closeSig channel is closed, the transaction has been processed, so we return without sending the timeout error and closing the chans
+		select {
+		case <-transaction.closeSig:
+			return
+		default:
+		}
+
+		// we close the closeSig channel so any response from the handler is discarded
+		close(transaction.closeSig)
+
+		transaction.ResponseChan <- &ErrorMsg{Err: ErrorData{Code: 408, Reason: fmt.Sprintf("Timeout waiting for request '%s'", transaction.ID)}}
+		close(transaction.ResponseChan)
+		gateway.transactions.Delete(transaction.ID)
+	}()
+
 	if err != nil {
 		select {
 		case gateway.errors <- err:
@@ -152,10 +172,6 @@ func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, re
 
 		return
 	}
-}
-
-func passMsg(ch chan interface{}, msg interface{}) {
-	ch <- msg
 }
 
 func (gateway *Gateway) ping(ctx context.Context) {
@@ -253,19 +269,31 @@ func (gateway *Gateway) recv(ctx context.Context) {
 					continue
 				}
 
-				// Pass msg
-				go passMsg(handle.Events, msg)
+				// Send response
+				handle.Events <- msg
 			}
 		} else {
 			switch msg.(type) {
 			case *EventMsg:
+				fmt.Println(".... received transaction ", transaction.ID)
+
+				// if the closeSig channel is closed, the request has timed out, so we return without sending the response received
+				select {
+				case <-transaction.closeSig:
+					continue
+				default:
+				}
+
+				close(transaction.closeSig)
+
+				// Send response and close chan
+				transaction.ResponseChan <- msg
+				close(transaction.ResponseChan)
 				gateway.transactions.Delete(transaction.ID)
+			default:
+				transaction.ResponseChan <- msg
+				close(transaction.ResponseChan)
 			}
-
-			fmt.Println(".... received transaction ", transaction.ID)
-
-			// Pass msg
-			go passMsg(transaction.ResponseChan, msg)
 		}
 	}
 }
@@ -438,13 +466,12 @@ func (handle *Handle) Request(ctx context.Context, body interface{}) (*SuccessMs
 	if body != nil {
 		req["body"] = body
 	}
+
+	// sending request
 	handle.send(ctx, req, respCh)
 
-	fmt.Println(".... waiting for message on ", handle.Type, handle.ID)
-
+	// waiting for response or timeout
 	msg := <-respCh
-
-	fmt.Println(".... received message", handle.Type, handle.ID)
 
 	switch msg := msg.(type) {
 	case *SuccessMsg:
