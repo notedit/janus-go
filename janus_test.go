@@ -20,8 +20,7 @@ func Test_Connect(t *testing.T) {
 		return
 	}
 
-	go client.Receiver(ctx)
-	go client.Ping(ctx)
+
 
 
 
