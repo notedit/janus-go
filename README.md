@@ -23,6 +23,9 @@ A maybe simpler article on [Structured Concurrency, on Medium](https://medium.co
 - Plan to use a lint or static analysis tool to make sure there are no missed errors
 - While already mentioned, I am removing the errors channels, which have been previously used to signal errors, and switching to the old-fashioned method of returning from functions on unhandlable errors.
 
+An old Google blog post said this about their policy about context.Context:
+> At Google, we require that Go programmers pass a Context parameter as the first argument to every function on the call path between incoming and outgoing requests. This allows Go code developed by many different teams to interoperate well. It provides simple control over timeouts and cancelation and ensures that critical values like security credentials transit Go programs properly.
+[Go Google Blog](https://blog.golang.org/context)
 
 I'm just getting started, let's see what happens.
 
