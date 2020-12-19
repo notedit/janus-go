@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"nhooyr.io/websocket"
 )
 
@@ -52,15 +53,12 @@ type Gateway struct {
 	transactionsUsed map[uint64]bool
 }
 
-// Connect initiates a webscoket connection with the Janus Gateway
-// you must start Ping and Receiver when using this
 func Connect(ctx context.Context, wsURL string) (*Gateway, error) {
 	//websocket.DefaultDialer.Subprotocols = []string{"janus-protocol"}
 	//websocket.DialOptions.Subprotocols=nil
 	opts := &websocket.DialOptions{Subprotocols: []string{"janus-protocol"}}
 
 	conn, _, err := websocket.Dial(ctx, wsURL, opts)
-
 	if err != nil {
 		return nil, err
 	}
@@ -72,9 +70,25 @@ func Connect(ctx context.Context, wsURL string) (*Gateway, error) {
 	gateway.Sessions = make(map[uint64]*Session)
 
 	// we now expect these to be started by our caller
-	// go gateway.Ping(ctx)
-	// go gateway.Receiver(ctx)
+
+	//yeah this is ugly
+	//
+	// The derived Context is canceled the first time a function passed to Go returns
+	// a non-nil error or the first time Wait returns, whichever occurs first.
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error { return gateway.ping(ctx) })
+	g.Go(func() error { return gateway.recv(ctx) })
+
+	go func() {
+		err := g.Wait() //finish when
+		if err != nil {
+			println(fmt.Sprintf("janus-session ended with error %v", err)) //stderr
+		}
+	}()
+
 	return gateway, nil
+
 }
 
 // Close closes the underlying connection to the Gateway.
@@ -99,9 +113,9 @@ func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, tr
 	if debug {
 		// log message being sent
 		var log bytes.Buffer
-		json.Indent(&log, data, ">", "   ")
+		_ = json.Indent(&log, data, ">", "   ")
 		log.Write([]byte("\n"))
-		log.WriteTo(os.Stdout)
+		_, _ = log.WriteTo(os.Stdout)
 	}
 
 	err = gateway.conn.Write(ctx, websocket.MessageText, data)
@@ -113,11 +127,11 @@ func passMsg(ch chan interface{}, msg interface{}) {
 	ch <- msg
 }
 
-// Ping should be started as a goroutine,
+// ping should be started as a goroutine,
 // it will periodically send a ping over the wire
 // to keep Janus happy with the gateway connection
 //
-func (gateway *Gateway) Ping(ctx context.Context) error {
+func (gateway *Gateway) ping(ctx context.Context) error {
 	ticker := time.NewTicker(time.Second * 30)
 	defer ticker.Stop()
 	for {
@@ -125,6 +139,7 @@ func (gateway *Gateway) Ping(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+			//fmt.Println("wsping on websock")
 			err := gateway.conn.Write(ctx, PingMessage, []byte{})
 			if err != nil {
 				return err
@@ -133,8 +148,25 @@ func (gateway *Gateway) Ping(ctx context.Context) error {
 	}
 }
 
-// Receiver should be started as a goroutine
-func (gateway *Gateway) Receiver(ctx context.Context) error {
+func (session *Session) KeepAliveSender(ctx context.Context) error {
+	ticker := time.NewTicker(time.Second * 5)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			fmt.Printf("-> keepalive on session %v\n",session.ID)
+			_, err := session.KeepAlive(ctx)
+			if err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// recv should be started as a goroutine
+func (gateway *Gateway) recv(ctx context.Context) error {
 
 	for {
 		// Read message from Gateway
@@ -154,9 +186,9 @@ func (gateway *Gateway) Receiver(ctx context.Context) error {
 		if debug {
 			// log message being sent
 			var log bytes.Buffer
-			json.Indent(&log, data, "<", "   ")
+			_ = json.Indent(&log, data, "<", "   ")
 			log.Write([]byte("\n"))
-			log.WriteTo(os.Stdout)
+			_, _ = log.WriteTo(os.Stdout)
 		}
 
 		typeFunc, ok := msgtypes[base.Type]
@@ -218,7 +250,7 @@ func (gateway *Gateway) Receiver(ctx context.Context) error {
 			}
 			gateway.Unlock()
 			if transaction == nil {
-				// Error()
+				return fmt.Errorf("null transaction")
 			}
 
 			// Pass msg
@@ -231,7 +263,10 @@ func (gateway *Gateway) Receiver(ctx context.Context) error {
 // On success, an InfoMsg will be returned and error will be nil.
 func (gateway *Gateway) Info(ctx context.Context) (*InfoMsg, error) {
 	req, ch := newRequest("info")
-	gateway.send(ctx, req, ch)
+	err := gateway.send(ctx, req, ch)
+	if err != nil {
+		return nil, err
+	}
 
 	msg := <-ch
 	switch msg := msg.(type) {
@@ -248,15 +283,22 @@ func (gateway *Gateway) Info(ctx context.Context) (*InfoMsg, error) {
 // On success, a new Session will be returned and error will be nil.
 func (gateway *Gateway) Create(ctx context.Context) (*Session, error) {
 	req, ch := newRequest("create")
-	gateway.send(ctx, req, ch)
+	err := gateway.send(ctx, req, ch)
+	if err != nil {
+		return nil, err
+	}
 
-	msg := <-ch
 	var success *SuccessMsg
-	switch msg := msg.(type) {
-	case *SuccessMsg:
-		success = msg
-	case *ErrorMsg:
-		return nil, msg
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case msg := <-ch:
+		switch msg := msg.(type) {
+		case *SuccessMsg:
+			success = msg
+		case *ErrorMsg:
+			return nil, msg
+		}
 	}
 
 	// Create new session
@@ -291,9 +333,9 @@ type Session struct {
 	gateway *Gateway
 }
 
-func (session *Session) send(ctx context.Context, msg map[string]interface{}, transaction chan interface{}) {
+func (session *Session) send(ctx context.Context, msg map[string]interface{}, transaction chan interface{}) error {
 	msg["session_id"] = session.ID
-	session.gateway.send(ctx, msg, transaction)
+	return session.gateway.send(ctx, msg, transaction)
 }
 
 // Attach sends an attach request to the Gateway within this session.
@@ -302,15 +344,22 @@ func (session *Session) send(ctx context.Context, msg map[string]interface{}, tr
 func (session *Session) Attach(ctx context.Context, plugin string) (*Handle, error) {
 	req, ch := newRequest("attach")
 	req["plugin"] = plugin
-	session.send(ctx, req, ch)
+	err := session.send(ctx, req, ch)
+	if err != nil {
+		return nil, err
+	}
 
 	var success *SuccessMsg
-	msg := <-ch
-	switch msg := msg.(type) {
-	case *SuccessMsg:
-		success = msg
-	case *ErrorMsg:
-		return nil, msg
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case msg := <-ch:
+		switch msg := msg.(type) {
+		case *SuccessMsg:
+			success = msg
+		case *ErrorMsg:
+			return nil, msg
+		}
 	}
 
 	handle := new(Handle)
@@ -329,7 +378,10 @@ func (session *Session) Attach(ctx context.Context, plugin string) (*Handle, err
 // On success, an AckMsg will be returned and error will be nil.
 func (session *Session) KeepAlive(ctx context.Context) (*AckMsg, error) {
 	req, ch := newRequest("keepalive")
-	session.send(ctx, req, ch)
+	err := session.send(ctx, req, ch)
+	if err != nil {
+		return nil, err
+	}
 
 	msg := <-ch
 	switch msg := msg.(type) {
@@ -347,8 +399,12 @@ func (session *Session) KeepAlive(ctx context.Context) (*AckMsg, error) {
 // AckMsg will be returned and error will be nil.
 func (session *Session) Destroy(ctx context.Context) (*AckMsg, error) {
 	req, ch := newRequest("destroy")
-	session.send(ctx, req, ch)
+	err := session.send(ctx, req, ch)
+	if err != nil {
+		return nil, err
+	}
 
+	/// XXX check for ctx.Done
 	var ack *AckMsg
 	msg := <-ch
 	switch msg := msg.(type) {
@@ -384,9 +440,11 @@ type Handle struct {
 	session *Session
 }
 
-func (handle *Handle) send(ctx context.Context, msg map[string]interface{}, transaction chan interface{}) {
+func (handle *Handle) send(ctx context.Context, msg map[string]interface{}, transaction chan interface{}) error {
 	msg["handle_id"] = handle.ID
-	handle.session.send(ctx, msg, transaction)
+	err := handle.session.send(ctx, msg, transaction)
+	return err
+
 }
 
 // Request sends a sync request
@@ -395,7 +453,10 @@ func (handle *Handle) Request(ctx context.Context, body interface{}) (*SuccessMs
 	if body != nil {
 		req["body"] = body
 	}
-	handle.send(ctx, req, ch)
+	err := handle.send(ctx, req, ch)
+	if err != nil {
+		return nil, err
+	}
 
 	msg := <-ch
 
@@ -421,7 +482,10 @@ func (handle *Handle) Message(ctx context.Context, body, jsep interface{}) (*Eve
 	if jsep != nil {
 		req["jsep"] = jsep
 	}
-	handle.send(ctx, req, ch)
+	err := handle.send(ctx, req, ch)
+	if err != nil {
+		return nil, err
+	}
 
 GetMessage: // No tears..
 	msg := <-ch
@@ -448,7 +512,10 @@ GetMessage: // No tears..
 func (handle *Handle) Trickle(ctx context.Context, candidate interface{}) (*AckMsg, error) {
 	req, ch := newRequest("trickle")
 	req["candidate"] = candidate
-	handle.send(ctx, req, ch)
+	err := handle.send(ctx, req, ch)
+	if err != nil {
+		return nil, err
+	}
 
 	msg := <-ch
 	switch msg := msg.(type) {
@@ -468,7 +535,10 @@ func (handle *Handle) Trickle(ctx context.Context, candidate interface{}) (*AckM
 func (handle *Handle) TrickleMany(ctx context.Context, candidates interface{}) (*AckMsg, error) {
 	req, ch := newRequest("trickle")
 	req["candidates"] = candidates
-	handle.send(ctx, req, ch)
+	err := handle.send(ctx, req, ch)
+	if err != nil {
+		return nil, err
+	}
 
 	msg := <-ch
 	switch msg := msg.(type) {
@@ -485,7 +555,10 @@ func (handle *Handle) TrickleMany(ctx context.Context, candidates interface{}) (
 // On success, an AckMsg will be returned and error will be nil.
 func (handle *Handle) Detach(ctx context.Context) (*AckMsg, error) {
 	req, ch := newRequest("detach")
-	handle.send(ctx, req, ch)
+	err := handle.send(ctx, req, ch)
+	if err != nil {
+		return nil, err
+	}
 
 	var ack *AckMsg
 	msg := <-ch
