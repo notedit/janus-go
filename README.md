@@ -4,7 +4,7 @@ A Websocket transport Janus WebRTC package for Go
 
 ## Intro
 
-This is an expiriment at creating an understandable, robust, Structured Concurrency based library for talking to Janus using Go
+This is an experiment at creating an understandable, robust, Structured Concurrency based library for talking to Janus using Go
 I am newer to structured concurrency, but I need a super super super robust and predictsble library for talking to Janus and this is my effort to have one
 
 ## Goals
