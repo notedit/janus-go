@@ -24,7 +24,9 @@ I am newer to structured concurrency, but I need a super super super robust and 
 ## Articles used to create the guidelines for stability and robustness
 
 [Why You Should Be Using errgroup... Blum](https://bionic.fullstory.com/why-you-should-be-using-errgroup-withcontext-in-golang-server-handlers/)
+    
 [Managing Groups of Goroutines in Go. Block](https://medium.com/swlh/managing-groups-of-gorutines-in-go-ee7523e3eaca)
+
 [Defer, Panic, and Recover/Gerrand](https://blog.golang.org/defer-panic-and-recover)
 
 
