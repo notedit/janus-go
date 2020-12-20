@@ -1,33 +1,65 @@
-# janus-go
+# cameronelliott/janus-go
 
 A Websocket transport Janus WebRTC package for Go
-Created by [https://github.com/notedit](Notedit),
-in addition to this popular library, he has a lot
-of cool programs for the Medooze media server, another awesome
-SFU like Janus. Check his stuff out! :smile:
 
-I really appreciate this fanastic package from Notedit.
-In working with it, I decided to expiriment with some changes
-to make it work better with the style of programming I am exploring.
+## Intro
 
-Basically, I am 
+This is an expiriment at creating an understandable, robust, Structured Concurrency based library for talking to Janus using Go
+I am newer to structured concurrency, but I need a super super super robust and predictsble library for talking to Janus and this is my effort to have one
 
+## Goals
 
-Here are the changes I am working on:
-1. Switch to [nhooyr/websocket](https://github.com/nhooyr/websocket) for websockets, the big win here IMHO is context.Context support which better supports [structured concurrency](https://bionic.fullstory.com/why-you-should-be-using-errgroup-withcontext-in-golang-server-handlers/) which in theory can help concurrency robustness when done well. 
-A maybe simpler article on [Structured Concurrency, on Medium](https://medium.com/swlh/managing-groups-of-gorutines-in-go-ee7523e3eaca)
+- First class stability and robustness
+- Ability to easily reason about correctness of this library
+ 
+## Prinicpals guiding the effort to make this super trustworthy and stable
 
 
-- Hope to remove goroutine creation in the library, I usually prefer to do this as a library's caller, as it makes it easier for me to think/reason about thread/goroutine issues
-- Hope to remove chan creation in the library, again I like to create these externally to libraries I use if possible, it can make thinking/reasoning about robustness easier for me.
-- Plan to use a lint or static analysis tool to make sure there are no missed errors
-- While already mentioned, I am removing the errors channels, which have been previously used to signal errors, and switching to the old-fashioned method of returning from functions on unhandlable errors.
+1. Be humble. I make mistakes, I invite and encourage your review and constructive critism on how to improve this lib.
+1. Use a number of articles and blog posts as guides for the prinicpals behind how this library works.
+1. Outline the techniques used to guide the code toward robustness and trustworthyness.
+1. Provide a real world example of usage.
+
+
+## Articles used to create the guidelines for stability and robustness
+
+[Why You Should Be Using errgroup... Blum](https://bionic.fullstory.com/why-you-should-be-using-errgroup-withcontext-in-golang-server-handlers/)
+[Managing Groups of Goroutines in Go. Block](https://medium.com/swlh/managing-groups-of-gorutines-in-go-ee7523e3eaca)
+[Defer, Panic, and Recover/Gerrand](https://blog.golang.org/defer-panic-and-recover)
+
+
+## Notable packages used 
+
+[nhooyr/websocket](https://github.com/nhooyr/websocket) for websockets, the big win here IMHO is context.Context which supports cancellation.
+
+
+
+## Techniques used for the stability and robustness of this project
+
+1. Goroutine lifetimes should be nested. Structured Concurrency
+1. [Share by communicating](https://golang.org/doc/effective_go.html#sharing)
+1. Use Panic and Recover for unexpected handable errors
+1. Writers to channels should defer to close channels
+1. Use context.Context on call paths from Http requests (see google blog post below)
+1. Use a lint or static analysis tool to make sure there are no missed errors
+1. Use best practices for error handling and panicing. Dave Cheyney has good srticles on this.
+
+
+
+
+## Google blog post about usage of context.context inside request handlers
 
 An old Google blog post said this about their policy about context.Context:
 > At Google, we require that Go programmers pass a Context parameter as the first argument to every function on the call path between incoming and outgoing requests. This allows Go code developed by many different teams to interoperate well. It provides simple control over timeouts and cancelation and ensures that critical values like security credentials transit Go programs properly.
 [Go Google Blog](https://blog.golang.org/context)
 
-I'm just getting started, let's see what happens.
+
+### Credits 
+Original work by [https://github.com/notedit](Notedit)
+In addition to this popular library, he has a lot
+of cool WebRTC related software, and stuff for the Medooze media server, another awesome
+SFU like Janus. Check his stuff out! :smile:
+
 
 
 
