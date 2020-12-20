@@ -56,12 +56,18 @@ wait done
 
 sessready := make(chan Session)
 createSession <- sessready
-session := <- sessready
+if session,ok := <- sessready; !ok { 
+
+  return
+}
+
+
 
 ## Handle Example
 
 hanready := make(chan Handle)
-session.makeHandle 
+session.makeHandle <- hanready
+handle := <- hanready
 
 
 
