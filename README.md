@@ -39,7 +39,33 @@ please join me, and provide any and all input and constructive criticism to help
 
 [nhooyr/websocket](https://github.com/nhooyr/websocket) for websockets, the big win here IMHO is context.Context which supports cancellation.
 
+## Programming Model
+- One goroutine per websocket
+- library users send pairs of (chan,msg) to that goroutine for commands to janus
+- they then wait for a response on the channel they provided
 
+## Websocket Setup Example
+
+tx:= make(chan ToJanus)
+createSession := make(chan chan Session)
+done:= make(chan bool)
+go JanusWSGoroutine(rx,tx, createSession)
+wait done
+
+## Session Creation Example
+
+sessready := make(chan Session)
+createSession <- sessready
+session := <- sessready
+
+## Handle Example
+
+hanready := make(chan Handle)
+session.makeHandle 
+
+
+
+## Plugin Command Example
 
 ## Techniques used for the stability and robustness of this project
 
