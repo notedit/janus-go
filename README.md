@@ -13,7 +13,7 @@ in production environments.
 I have decided to currently do most of this work here:
 [https://github.com/cameronelliott/janus-go](https://github.com/cameronelliott/janus-go)
 
-Please see if it suits your needs, and feel free to file PRs, issues and suggests there.
+Please see if it suits your needs, and feel free to file PRs, issues and suggestions there.
 
 Thanks,
 Cameron
