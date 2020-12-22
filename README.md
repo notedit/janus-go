@@ -1,26 +1,15 @@
-# WARN: Not READY for prime-time
-
-
-
 # cameronelliott/janus-go
 
-A Websocket transport Janus WebRTC package for Janus
+A Go language Websocket based package for controlling the Janus WebRTC gateway
+
+## TL;DR
+
+The main thrust of this package is to improve on reliability, stability, and trustworthiness of the original repository.
+  
+Please join me by providing feedback and Pull Requests
 
 
-## Goals
 
-- First class stability and robustness
-- Ability to easily reason about correctness of this library
-
-
-## Intro
-
-This is an experiment at creating an understandable, robust, Structured Concurrency based library for talking to Janus using Go
-I am newer to structured concurrency, but I need a super super super robust and predictsble library for talking to Janus and this is my effort to have one
-please join me, and provide any and all input and constructive criticism to help this become a more robust and trustworthy library
-
-
- 
 ## Prinicpals guiding the effort to make this super trustworthy and stable
 
 
@@ -39,55 +28,30 @@ please join me, and provide any and all input and constructive criticism to help
 [Defer, Panic, and Recover/Gerrand](https://blog.golang.org/defer-panic-and-recover)
 
 
-## Notable packages used 
+## Notable packages 
 
-[nhooyr/websocket](https://github.com/nhooyr/websocket) for websockets, the big win here IMHO is context.Context which supports cancellation.
+[nhooyr/websocket](https://github.com/nhooyr/websocket): used for websockets, the big win here IMHO is context.Context which supports cancellation.
 
-## Programming Model
-- One goroutine per websocket
-- library users send pairs of (chan,msg) to that goroutine for commands to janus
-- they then wait for a response on the channel they provided
+[golang.org/x/sync/errgroup](https://pkg.go.dev/golang.org/x/sync/errgroup): may or may not be included on this package in the future, but can provide a very useful tool for propagating error values between goroutines and their creators.
 
-## Websocket Setup Example
-
-tx:= make(chan ToJanus)
-createSession := make(chan chan Session)
-done:= make(chan bool)
-go JanusWSGoroutine(rx,tx, createSession)
-wait done
-
-## Session Creation Example
-
-sessready := make(chan Session)
-createSession <- sessready
-if session,ok := <- sessready; !ok { 
-
-  return
-}
-
-
-
-## Handle Example
-
-hanready := make(chan Handle)
-session.makeHandle <- hanready
-handle := <- hanready
-
-
-
-## Plugin Command Example
 
 ## Techniques used for the stability and robustness of this project
 
-1. Goroutine lifetimes should be nested. Structured Concurrency
-1. [Share by communicating](https://golang.org/doc/effective_go.html#sharing)
-1. Use Panic and Recover for unexpected handable errors
-1. Writers to channels should defer to close channels
+1. Switch from github.com/gorilla/websocket to github.com/nhooyr.io/websocket, the reason being is that nhooyr.io supports context.Context for many websocket operations. This is a big win for reliable concurrency in many situations. See comment/link below about Google policy requiring use of context.Context
+1. Propagate all non-nil `error`s up the call stack, *AND* up the goroutine chain. This should mean no ignored, lost, swallowed errors. 
+1. Support the use of this package [golang.org/x/sync/errgroup](https://pkg.go.dev/golang.org/x/sync/errgroup). This is how error values can be returned from goroutines to their parents. Links to articles about Structured Concurrency below.
+1. Writers to channels should use `defer close(channelx)` to close channels, especially where nested goroutine lifetimes occur. (Structured Conncurrency)
 1. Use context.Context on call paths from Http requests (see google blog post below)
 1. Use a lint or static analysis tool to make sure there are no missed errors
-1. Use best practices for error handling and panicing. Dave Cheyney has good srticles on this.
+1. Use best practices for logging levels. Dave Cheyney has good articles on this.
 
 
+## Techniques not used
+1. [Share by communicating](https://golang.org/doc/effective_go.html#sharing),  
+this is a great approach for robust concurrency, 
+but it requires more changes to the original than I am comfortable making.
+It would also break the API for existing code.
+So we are going to live with the mutexs and locking in the code.
 
 
 ## Google blog post about usage of context.context inside request handlers
