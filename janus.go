@@ -8,13 +8,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
-
 	"golang.org/x/sync/errgroup"
 	"nhooyr.io/websocket"
+	"github.com/rs/xid"
 )
 
 // The message types are defined in RFC 6455, section 11.8.
@@ -48,16 +46,21 @@ type Gateway struct {
 	sync.Mutex
 
 	conn             *websocket.Conn
-	nextTransaction  uint64
-	transactions     map[uint64]chan interface{}
-	transactionsUsed map[uint64]bool
+	transactions     map[xid.ID]chan interface{}
+	transactionsUsed map[xid.ID]bool
+	errors           chan error
+	sendChan         chan []byte
+	writeMu          sync.Mutex
 }
 
-func Connect(ctx context.Context, wsURL string) (*Gateway, error) {
-	//websocket.DefaultDialer.Subprotocols = []string{"janus-protocol"}
-	//websocket.DialOptions.Subprotocols=nil
-	opts := &websocket.DialOptions{Subprotocols: []string{"janus-protocol"}}
+func generateTransactionId() xid.ID {
+	return xid.New()
+}
 
+// Connect initiates a webscoket connection with the Janus Gateway
+func Connect(ctx context.Context, wsURL string) (*Gateway, error) {
+
+	opts := &websocket.DialOptions{Subprotocols: []string{"janus-protocol"}}
 	conn, _, err := websocket.Dial(ctx, wsURL, opts)
 	if err != nil {
 		return nil, err
@@ -65,8 +68,8 @@ func Connect(ctx context.Context, wsURL string) (*Gateway, error) {
 
 	gateway := new(Gateway)
 	gateway.conn = conn
-	gateway.transactions = make(map[uint64]chan interface{})
-	gateway.transactionsUsed = make(map[uint64]bool)
+	gateway.transactions = make(map[xid.ID]chan interface{})
+	gateway.transactionsUsed = make(map[xid.ID]bool)
 	gateway.Sessions = make(map[uint64]*Session)
 
 	// we now expect these to be started by our caller
@@ -96,13 +99,14 @@ func (gateway *Gateway) Close(code websocket.StatusCode, reason string) error {
 	return gateway.conn.Close(code, reason)
 }
 
-func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, transaction chan interface{}) error {
-	id := atomic.AddUint64(&gateway.nextTransaction, 1)
 
-	msg["transaction"] = strconv.FormatUint(id, 10)
+func (gateway *Gateway) send(ctx context.Context, msg map[string]interface{}, transaction chan interface{}) error {
+	guid := generateTransactionId()
+
+	msg["transaction"] = guid.String()
 	gateway.Lock()
-	gateway.transactions[id] = transaction
-	gateway.transactionsUsed[id] = false
+	gateway.transactions[guid] = transaction
+	gateway.transactionsUsed[guid] = false
 	gateway.Unlock()
 
 	data, err := json.Marshal(msg)
@@ -205,7 +209,7 @@ func (gateway *Gateway) recv(ctx context.Context) error {
 
 		var transactionUsed bool
 		if base.ID != "" {
-			id, _ := strconv.ParseUint(base.ID, 10, 64)
+			id, _ := xid.FromString(base.ID)
 			gateway.Lock()
 			transactionUsed = gateway.transactionsUsed[id]
 			gateway.Unlock()
@@ -240,7 +244,7 @@ func (gateway *Gateway) recv(ctx context.Context) error {
 				go passMsg(handle.Events, msg)
 			}
 		} else {
-			id, _ := strconv.ParseUint(base.ID, 10, 64)
+			id, _ := xid.FromString(base.ID)
 			// Lookup Transaction
 			gateway.Lock()
 			transaction := gateway.transactions[id]
