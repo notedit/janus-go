@@ -125,3 +125,141 @@ type HangupMsg struct {
 	Session uint64 `json:"session_id"`
 	Handle  uint64 `json:"sender"`
 }
+
+const (
+	Create           = "create"
+	Destroy          = "destroy"
+	Exists           = "exists"
+	Info             = "Info"
+	ListParticipants = "listparticipants"
+	RtpForward       = "rtp_forward"
+)
+
+type GenericRequest struct {
+	Request   *string `json:"request,omitempty"`
+	Type      *string `json:"type,omitempty"`
+	Room      *int64  `json:"room,omitempty"`
+	Id        *int    `json:"id,omitempty"`
+	Secret    *string `json:"secret,omitempty"`
+	Permanent *bool   `json:"permanent,omitempty"`
+}
+
+type CreateRequest struct {
+	GenericRequest
+	IsPrivate          *bool   `json:"is_private,omitempty"`
+	Audio              *bool   `json:"audio,omitempty"`
+	AudioPort          *int    `json:"audioport,omitempty"`
+	AudioRTCPPort      *int    `json:"audiortcpport,omitempty"`
+	AudioPT            *int    `json:"audiopt,omitempty"`
+	AudioRTPMap        *string `json:"audiortpmap,omitempty"`
+	AudioCodec         *string `json:"audiocodec,omitempty"`
+	Bitrate            *int64  `json:"bitrate,omitempty"`
+	FirFreq            *int    `json:"fir_freq,omitempty"`
+	Publishers         *int    `json:"publishers,omitempty"`
+	TransportWideCcExt *bool   `json:"transport_wide_cc_ext,omitempty"`
+	Video              *bool   `json:"video,omitempty"`
+	VideoPort          *int    `json:"videoport,omitempty"`
+	VideoRTCPPort      *int    `json:"videortcpport,omitempty"`
+	VideoPT            *int    `json:"videopt,omitempty"`
+	VideoRTPMap        *string `json:"videortpmap,omitempty"`
+	VideoCodec         *string `json:"videocodec,omitempty"`
+	VideoOrientExt     *string `json:"videoorient_ext,omitempty"`
+}
+
+type RTPForwardRequest struct {
+	GenericRequest
+	PublisherID   *int    `json:"publisher_id,omitempty"`
+	Host          *string `json:"host,omitempty"`
+	HostFamily    *string `json:"host_family,omitempty"`
+	VideoPort     *int    `json:"video_port,omitempty"`
+	VideoRTCPPort *int    `json:"video_rtcp_port,omitempty"`
+	AlwaysOn      *bool   `json:"always_on,omitempty"`
+}
+
+type Response struct {
+	VideoRoom     *string          `json:"videoroom,omitempty"`
+	AudioBridge   *string          `json:"audiobridge,omitempty"`
+	TextRoom      *string          `json:"textroom,omitempty"`
+	Streaming     string           `json:"streaming,omitempty"`
+	Room          *int64           `json:"room,omitempty"`
+	Exists        *bool            `json:"exists,omitempty"`
+	Participants  *[]Participant   `json:"participants,omitempty"`
+	Rooms         *[]Room          `json:"list,omitempty"`
+	Info          *Room            `json:"info,omitempty"`
+	RTPForwarders *[]RTPForwarders `json:"rtp_forwarders,omitempty"`
+}
+
+type Participant struct {
+	ID        *int64  `json:"id,omitempty"`
+	Display   *string `json:"display,omitempty"`
+	Publisher *bool   `json:"publisher,omitempty"`
+	Talking   *bool   `json:"talking,omitempty"`
+	Setup     *bool   `json:"setup,omitempty"`
+	Muted     *bool   `json:"muted,omitempty"`
+	Username  *string `json:"username,omitempty"`
+}
+
+type Room struct {
+	Room            *int64  `json:"room,omitempty"`
+	Description     *string `json:"description,omitempty"`
+	PinRequired     *bool   `json:"pin_required,omitempty"`
+	MaxPublishers   *int    `json:"max_publishers,omitempty"`
+	Bitrate         *int    `json:"bitrate,omitempty"`
+	BitrateCap      *bool   `json:"bitrate_cap,omitempty"`
+	FirFreq         *int    `json:"fir_freq,omitempty"`
+	AudioCodec      *string `json:"audiocodec,omitempty"`
+	VideoCodec      *string `json:"videocodec,omitempty"`
+	Record          *bool   `json:"record,omitempty"`
+	RecordDir       *string `json:"record_dir,omitempty"`
+	LockRecord      *bool   `json:"lock_record,omitempty"`
+	NumParticipants *int    `json:"num_participants,omitempty"`
+	SamplingRate    *int    `json:"sampling_rate,omitempty"`
+	ID              *int64  `json:"id,omitempty"`
+	Name            *string `json:"name,omitempty"`
+	Type            *string `json:"type,omitempty"`
+	Metadata        *string `json:"metadata,omitempty"`
+	Enabled         *bool   `json:"enabled,omitempty"`
+	AudioAgeMs      *int    `json:"audio_age_ms,omitempty"`
+	VideoAgeMs      *int    `json:"video_age_ms,omitempty"`
+	Pin             *string `json:"pin,omitempty"`
+	IsPrivate       *string `json:"is_private,omitempty"`
+	Viewers         *int    `json:"viewers,omitempty"`
+	Audio           *bool   `json:"audio,omitempty"`
+	AudioPort       *int    `json:"audioport,omitempty"`
+	AudioRTCPPort   *int    `json:"audiortcpport,omitempty"`
+	AudioPt         *int    `json:"audiopt,omitempty"`
+	AudioRTPMap     *string `json:"audiortpmap,omitempty"`
+	AudioFMTP       *string `json:"audiofmtp,omitempty"`
+	Video           *bool   `json:"video,omitempty"`
+	VideoPort       *int    `json:"videoport,omitempty"`
+	VideoRTCPPort   *int    `json:"videortcpport,omitempty"`
+	VideoPt         *int    `json:"videopt,omitempty"`
+	VideoRTPMap     *string `json:"videortpmap,omitempty"`
+	VideoFMTP       *int    `json:"videofmtp,omitempty"`
+}
+
+type RTPForwarders struct {
+	PublisherID  *int64          `json:"publisher_id,omitempty"`
+	RTPForwarder *[]RTPForwarder `json:"rtp_forwarder,omitempty"`
+	StreamID     *int64          `json:"stream_id,omitempty"`
+	IP           *string         `json:"ip,omitempty"`
+	Port         *int            `json:"port,omitempty"`
+	SSRC         *int64          `json:"ssrc,omitempty"`
+	Codec        *string         `json:"codec,omitempty"`
+	PType        *int64          `json:"ptype,omitempty"`
+	SRTP         *bool           `json:"srtp,omitempty"`
+	AlwaysOn     *bool           `json:"always_on,omitempty"`
+}
+
+type RTPForwarder struct {
+	AudioStreamID *int64  `json:"audio_stream_id,omitempty"`
+	VideoStreamID *int64  `json:"video_stream_id,omitempty"`
+	DataStreamID  *int64  `json:"data_stream_id,omitempty"`
+	IP            *string `json:"ip,omitempty"`
+	Port          *int    `json:"port,omitempty"`
+	RTCPPort      *int    `json:"rtcp_port,omitempty"`
+	SSRC          *int64  `json:"ssrc,omitempty"`
+	Pt            *int64  `json:"pt,omitempty"`
+	SubStream     *string `json:"substream,omitempty"`
+	SRTP          *bool   `json:"srtp,omitempty"`
+}
