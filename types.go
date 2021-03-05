@@ -20,6 +20,7 @@
 package janus
 
 var msgtypes = map[string]func() interface{}{
+	"trickle":       func() interface{} { return &TrickleMsg{} },
 	"error":       func() interface{} { return &ErrorMsg{} },
 	"success":     func() interface{} { return &SuccessMsg{} },
 	"detached":    func() interface{} { return &DetachedMsg{} },
@@ -38,6 +39,17 @@ type BaseMsg struct {
 	ID      string `json:"transaction"`
 	Session uint64 `json:"session_id"`
 	Handle  uint64 `json:"sender"`
+}
+
+type TrickleMsg struct {
+	Candidate Candidate `json:"candidate"`
+}
+
+type Candidate struct {
+	Completed bool `json:"completed"`
+	SdpMid *string `json:"sdpMid"`
+	SdpMLineIndex *uint16 `json:"sdpMLineIndex"`
+	Candidate string `json:"candidate"`
 }
 
 type ErrorMsg struct {
