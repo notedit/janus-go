@@ -469,16 +469,16 @@ func (handle *Handle) Trickle(candidate interface{}) (*AckMsg, error) {
 	req, ch := newRequest("trickle")
 	req["candidate"] = candidate
 	handle.send(req, ch)
-	close(ch)
-	/*msg := <-ch
+
+	msg := <-ch
 	switch msg := msg.(type) {
 	case *AckMsg:
 		return msg, nil
 	case *ErrorMsg:
 		return nil, msg
 	}
-*/
-	return nil, nil
+
+	return nil, unexpected("trickle")
 }
 
 // TrickleMany sends a trickle request to the Gateway as part of establishing
