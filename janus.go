@@ -120,7 +120,7 @@ func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interf
 }
 
 func passMsg(ch chan interface{}, msg interface{}) {
-	ch <- msg
+		ch <- msg
 }
 
 func (gateway *Gateway) ping() {
