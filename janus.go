@@ -318,7 +318,7 @@ func (gateway *Gateway) Claim(sessionID uint64, handleIDs []uint64) (*Session, e
 	// Create new session
 	session := new(Session)
 	session.gateway = gateway
-	session.ID = success.Data.ID
+	session.ID = success.Session
 	session.Handles = make(map[uint64]*Handle)
 	session.Events = make(chan interface{}, 2)
 
