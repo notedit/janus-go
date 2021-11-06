@@ -5,6 +5,7 @@ package janus
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -290,6 +291,52 @@ func (gateway *Gateway) Create() (*Session, error) {
 	gateway.Lock()
 	gateway.Sessions[session.ID] = session
 	gateway.Unlock()
+
+	return session, nil
+}
+
+// Claim sends a claim request to the Gateway.
+// On success, the Session will be recreated and error will be nil.
+func (gateway *Gateway) Claim(sessionID uint64, handleIDs []uint64) (*Session, error) {
+	if gateway.Sessions[sessionID] != nil {
+		return nil, errors.New("the session is exist already")
+	}
+
+	req, ch := newRequest("claim")
+	req["session_id"] = sessionID
+	gateway.send(req, ch)
+
+	msg := <-ch
+	var success *SuccessMsg
+	switch msg := msg.(type) {
+	case *SuccessMsg:
+		success = msg
+	case *ErrorMsg:
+		return nil, msg
+	}
+
+	// Create new session
+	session := new(Session)
+	session.gateway = gateway
+	session.ID = success.Session
+	session.Handles = make(map[uint64]*Handle)
+	session.Events = make(chan interface{}, 2)
+
+	// Store this session
+	gateway.Lock()
+	gateway.Sessions[session.ID] = session
+	gateway.Unlock()
+
+	for _, hid := range handleIDs {
+		handle := &Handle{
+			ID:      hid,
+			Events:  make(chan interface{}),
+			session: session,
+		}
+		gateway.Lock()
+		session.Handles[handle.ID] = handle
+		gateway.Unlock()
+	}
 
 	return session, nil
 }
