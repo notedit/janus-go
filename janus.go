@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"log"
 	"os"
 	"sync"
@@ -49,10 +50,10 @@ func generateTransactionId() xid.ID {
 }
 
 // Connect initiates a webscoket connection with the Janus Gateway
-func Connect(wsURL string) (*Gateway, error) {
+func Connect(wsURL string, requestHeader http.Header) (*Gateway, error) {
 	websocket.DefaultDialer.Subprotocols = []string{"janus-protocol"}
 
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, requestHeader)
 
 	if err != nil {
 		return nil, err
