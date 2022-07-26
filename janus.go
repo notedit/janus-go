@@ -34,7 +34,7 @@ type Gateway struct {
 	Sessions map[uint64]*Session
 
 	// Access to the Sessions map should be synchronized with the Gateway.Lock()
-	// and Gateway.Unlock() methods provided by the embeded sync.Mutex.
+	// and Gateway.Unlock() methods provided by the embedded sync.Mutex.
 	sync.Mutex
 
 	conn             *websocket.Conn
@@ -49,7 +49,7 @@ func generateTransactionId() xid.ID {
 	return xid.New()
 }
 
-// Connect initiates a webscoket connection with the Janus Gateway
+// Connect initiates a websocket connection with the Janus Gateway
 func Connect(wsURL string, requestHeader http.Header) (*Gateway, error) {
 	websocket.DefaultDialer.Subprotocols = []string{"janus-protocol"}
 
