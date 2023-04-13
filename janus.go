@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"log"
 	"os"
 	"sync"
@@ -33,7 +34,7 @@ type Gateway struct {
 	Sessions map[uint64]*Session
 
 	// Access to the Sessions map should be synchronized with the Gateway.Lock()
-	// and Gateway.Unlock() methods provided by the embeded sync.Mutex.
+	// and Gateway.Unlock() methods provided by the embedded sync.Mutex.
 	sync.Mutex
 
 	conn             *websocket.Conn
@@ -48,11 +49,11 @@ func generateTransactionId() xid.ID {
 	return xid.New()
 }
 
-// Connect initiates a webscoket connection with the Janus Gateway
-func Connect(wsURL string) (*Gateway, error) {
+// Connect initiates a websocket connection with the Janus Gateway
+func Connect(wsURL string, requestHeader http.Header) (*Gateway, error) {
 	websocket.DefaultDialer.Subprotocols = []string{"janus-protocol"}
 
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, requestHeader)
 
 	if err != nil {
 		return nil, err
@@ -92,7 +93,7 @@ func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interf
 
 	data, err := json.Marshal(msg)
 	if err != nil {
-		fmt.Printf("json.Marshal: %s\n", err)
+		log.Printf("json.Marshal: %s\n", err)
 		return
 	}
 
@@ -112,7 +113,7 @@ func (gateway *Gateway) send(msg map[string]interface{}, transaction chan interf
 		select {
 		case gateway.errors <- err:
 		default:
-			fmt.Printf("conn.Write: %s\n", err)
+			log.Printf("conn.Write: %s\n", err)
 		}
 
 		return
@@ -160,14 +161,14 @@ func (gateway *Gateway) recv() {
 			select {
 			case gateway.errors <- err:
 			default:
-				fmt.Printf("conn.Read: %s\n", err)
+				log.Printf("conn.Read: %s\n", err)
 			}
 
 			return
 		}
 
 		if err := json.Unmarshal(data, &base); err != nil {
-			fmt.Printf("json.Unmarshal: %s\n", err)
+			log.Printf("json.Unmarshal: %s\n", err)
 			continue
 		}
 
@@ -181,13 +182,13 @@ func (gateway *Gateway) recv() {
 
 		typeFunc, ok := msgtypes[base.Type]
 		if !ok {
-			fmt.Printf("Unknown message type received!\n")
+			log.Printf("Unknown message type received!\n")
 			continue
 		}
 
 		msg := typeFunc()
 		if err := json.Unmarshal(data, &msg); err != nil {
-			fmt.Printf("json.Unmarshal: %s\n", err)
+			log.Printf("json.Unmarshal: %s\n", err)
 			continue // Decode error
 		}
 
@@ -211,7 +212,7 @@ func (gateway *Gateway) recv() {
 				session := gateway.Sessions[base.Session]
 				gateway.Unlock()
 				if session == nil {
-					fmt.Printf("Unable to deliver message. Session gone?\n")
+					log.Printf("Unable to deliver message. Session gone?\n")
 					continue
 				}
 
@@ -220,7 +221,7 @@ func (gateway *Gateway) recv() {
 				handle := session.Handles[base.Handle]
 				session.Unlock()
 				if handle == nil {
-					fmt.Printf("Unable to deliver message. Handle gone?\n")
+					log.Printf("Unable to deliver message. Handle gone?\n")
 					continue
 				}
 

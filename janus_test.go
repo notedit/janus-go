@@ -1,12 +1,14 @@
 package janus
 
 import (
+	"net/http"
 	"testing"
 )
 
 func Test_Connect(t *testing.T) {
 
-	client, err := Connect("ws://39.106.248.166:8188/")
+	reqHeader := http.Header{"User-Agent": []string{"janus-test"}}
+	client, err := Connect("ws://39.106.248.166:8188/", reqHeader)
 	if err != nil {
 		t.Fail()
 		return
